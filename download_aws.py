@@ -46,6 +46,9 @@ def aws_download_multithread(save_dir, bucket, keys, file_names):
     boto3_session = boto3.Session()
     boto3_client = boto3_session.resource("s3", config=botoconfig.Config(signature_version=botocore.UNSIGNED))
 
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
     tqdm.set_lock(TRLock())
     try:
         with ThreadPoolExecutor(initializer=tqdm.set_lock, initargs=(tqdm.get_lock(),)) as executor:

@@ -7,7 +7,7 @@ FILE_DPI = 300
 
 '''
 Used to set the style of the flashes shown on the map.
-New (within current frame) flashes use the NEW_FLASH_STYLE,
+New (within current 20s frame) flashes use the NEW_FLASH_STYLE,
 and historical flashes use the OLD_FLASH_STYLE.
 '''
 NEW_FLASH_STYLE = {'markersize': 8, 'marker': 'x', 'color': 'red'}
@@ -18,9 +18,15 @@ Used to set the style of any user input points shown on the map.
 POINT_STYLE is used for the point(s), and POINT_LABEL_STYLE is used for any
 point label(s) given. No labels are shown if POINT_LABEL_VISIBLE is False.
 '''
-POINT_STYLE = {'color': 'black', 'markersize': 8, 'marker': 'o'}
+POINT_STYLE = {'color': 'black', 'markersize': 8}
 POINT_LABEL_VISIBLE = True
 POINT_LABEL_STYLE = {'color': 'black', 'fontsize': 10, 'fontweight': 'bold'}
+DRAW_LABEL_ARROWS = True
+
+## Set the positioning of the labels relative to the points being plotted
+## (Default: X=0.2, Y=0.1)
+X_LABEL_OFFSET = 0.4
+Y_LABEL_OFFSET = 0.0
 
 
 
@@ -64,20 +70,38 @@ from cartopy.feature import NaturalEarthFeature
 from tqdm.auto import tqdm
 from adjustText import adjust_text 
 
-from __internal_funcs import plot_towns, draw_logo
+from __internal_funcs import (plot_towns, draw_logo, plot_points, define_hi_res_fig)
 
 np.seterr(divide = 'ignore', invalid='ignore')
 mpl.use('agg')
 
 def plot_single_time_glm(file_path: str, 
                          save_dir: str, 
-                         points: list[tuple[float, float, str], ...], 
+                         points: list[tuple[float, float, str, str], ...], 
                          bbox: list[float, float, float, float], 
                          **kwargs) -> pd.DataFrame: 
 
-    '''
-    A function to 
-    '''
+    """
+    This function will take a GLM data file in NetCDF format, and plot any flashes
+    it finds in the file, along with any other specified points. Will only plot flashes
+    found in this specific file (i.e. "time").
+
+    Inputs
+        - file_path: str:
+                A path to a GLM NetCDF data file.
+        - save_dir, str: 
+                The desired destination to save the plot.
+        - point, list[tuple[float, float, str, str]]:
+                A list of points to add to the plot. Each point has the format
+                '(lat [float], lon [float], marker [str], label [str])'
+        - bbox, list[float, float, float, float]:
+                A list of floats defining the bounding box of the image. The function
+                pulls the boundaries in the following order: N, S, E, W.
+    
+    Returns
+        A Pandas DataFrame, with the lats, lons, and times of all the flashes detected 
+        in this file.
+    """
 
     try:
         data = xr.open_dataset(file_path, engine="netcdf4")
@@ -93,22 +117,8 @@ def plot_single_time_glm(file_path: str,
     flash_lats = data.variables['flash_lat'][:]
     flash_lons = data.variables['flash_lon'][:]
 
-    fig = plt.figure(figsize=(22,16))
-    ax = plt.axes(projection = crs.PlateCarree())
-    
-    bbox_wesn = [bbox[3], bbox[2], bbox[1], bbox[0]]
-    ax.set_extent(bbox_wesn, crs=crs.PlateCarree())
-
-    plot_logo(ax)
-    
-    states = NaturalEarthFeature(category="cultural", scale="50m",
-                                          facecolor="none",
-                                          name="admin_1_states_provinces")
-    ax.add_feature(states, linewidth=1.0, edgecolor="black")
-    ax.coastlines('50m', linewidth=1.5)
-    ax.add_feature(cartopy.feature.LAKES.with_scale('10m'), linestyle='-', linewidth=0.5, alpha=1,edgecolor='blue',facecolor='none')
-    ax.add_feature(cfeature.BORDERS, linewidth=1.5)
-    plot_towns(ax, (bbox_wesn[0], bbox_wesn[1]), (bbox_wesn[2], bbox_wesn[3]), scale_rank=7)
+    fig, ax = define_hi_res_fig((bbox[2], bbox[3]),
+                                (bbox[0], bbox[1]))
     
     flashes = ax.plot(flash_lats, 
                       flash_lons,
@@ -119,32 +129,24 @@ def plot_single_time_glm(file_path: str,
     plt.setp(flashes, **NEW_FLASH_STYLE)
 
     if points:
-        input_pts = []
-        input_pt_labels = []
-        for point in points:
-            x_axis = point[0]
-            y_axis = point[1]
-            label = point[2]
-            
-            pt = ax.plot([y_axis],[x_axis])
-            input_pts += [pt]
-           
-            if POINT_LABEL_VISIBLE:
-                pt_label = ax.annotate(label, 
-                                      (y_axis, x_axis), 
-                                      horizontalalignment='center', 
-                                      verticalalignment='top', 
-                                      transform=crs.PlateCarree(), 
-                                      annotation_clip=True, 
-                                      zorder=30)
-                input_pt_labels = [pt_label]
+        plot_points(plt, ax,
+            points,
+            x_label_offset=X_LABEL_OFFSET,
+            y_label_offset=Y_LABEL_OFFSET,
+            draw_labels=POINT_LABEL_VISIBLE,
+            draw_arrows=DRAW_LABEL_ARROWS,
+            point_style=POINT_STYLE,
+            point_label_style=POINT_LABEL_STYLE)
 
-        plt.setp(input_pts, **POINT_STYLE)
-        plt.setp(input_pt_labels, **POINT_LABEL_STYLE)
-        adjust_text(input_pt_labels)
+    plot_logo(ax)
 
-    plt.title(f'{orbital_slot.replace("-Test", "")} ({sat_id.replace("G", "GOES-")})\nDetected Lightning "Flashes"', loc='left', fontweight='bold', fontsize=15)
-    plt.title(f'Starting At {scan_start.strftime("%d %B %Y %H:%M:%S UTC")}\nThrough {scan_end.strftime("%d %B %Y %H:%M:%S UTC")}', loc='right')
+    plot_towns(ax, 
+               (bbox[2], bbox[3]),
+               (bbox[0], bbox[1]), 
+               scale_rank=7)
+
+    ax.set_title(f'{orbital_slot.replace("-Test", "")} ({sat_id.replace("G", "GOES-")})\nDetected Lightning "Flashes"', loc='left', fontweight='bold', fontsize=15)
+    ax.set_title(f'Starting At {scan_start.strftime("%d %B %Y %H:%M:%S UTC")}\nThrough {scan_end.strftime("%d %B %Y %H:%M:%S UTC")}', loc='right')
     
     file_name = sat_id + "_GLM_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
     
@@ -153,16 +155,42 @@ def plot_single_time_glm(file_path: str,
 
     dest_path = os.path.join(save_dir, file_name + ".png")
 
-    plt.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
-    plt.close()
+    fig.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
+    plt.close(fig)
 
 def plot_cumulative_glm(file_path: str, 
                         save_dir: str, 
                         points: list[tuple[float, float, str], ...], 
                         bbox: list[float, float, float, float], 
                         hist_flashes_df: pd.DataFrame,
-                        cum_minutes: int = DEFAULT_HISTORY_MINUTES, 
+                        cum_minutes: int, 
                         **kwargs) -> pd.DataFrame:
+
+    """
+    This function will take a GLM data file in NetCDF format, and plot any flashes
+    it finds in the file, along with any other specified points. This takes an 
+    Inputs
+        - file_path: str:
+                A path to a GLM NetCDF data file.
+        - save_dir, str: 
+                The desired destination to save the plot.
+        - point, list[tuple[float, float, str, str]]:
+                A list of points to add to the plot. Each point has the format
+                '(lat [float], lon [float], marker [str], label [str])'
+        - bbox, list[float, float, float, float]:
+                A list of floats defining the bounding box of the image. The function
+                pulls the boundaries in the following order: N, S, E, W.
+        - hist_flashes_df, pandas.DataFrame:
+                A Pandas DataFrame, with the lats, lons, and times of all historical
+                flashes to plot.
+        - cum_minutes, int:
+                The number of minutes to keep a rolling window of historical flashes for.
+                Will remove historical flashes if t(flash) <= t(this_file) - cum_minutes 
+    
+    Returns
+        A Pandas DataFrame, with the lats, lons, and times of all the historical flashes
+        within the specified window.
+    """
     
     try:
         data = xr.open_dataset(file_path, engine="netcdf4")
@@ -187,77 +215,53 @@ def plot_cumulative_glm(file_path: str,
     flash_lats = data.variables['flash_lat'].values
     flash_lons = data.variables['flash_lon'].values
 
-    fig = plt.figure(figsize=(22,16))
-    ax = plt.axes(projection = crs.PlateCarree())
-    
-    bbox_wesn = [bbox[3], bbox[2], bbox[1], bbox[0]]
-    ax.set_extent(bbox_wesn, crs=crs.PlateCarree())
+    fig, ax = define_hi_res_fig((bbox[2], bbox[3]),
+                                (bbox[0], bbox[1]))
 
-    draw_logo(ax)
-    
-    states = NaturalEarthFeature(category="cultural", scale="50m",
-                                          facecolor="none",
-                                          name="admin_1_states_provinces")
-    ax.add_feature(states, linewidth=1.0, edgecolor="black")
-    ax.coastlines('50m', linewidth=1.5)
-    ax.add_feature(cartopy.feature.LAKES.with_scale('10m'), linestyle='-', linewidth=0.5, alpha=1,edgecolor='blue',facecolor='none')
-    ax.add_feature(cfeature.BORDERS, linewidth=1.5)
-    plot_towns(ax, (bbox_wesn[0], bbox_wesn[1]), (bbox_wesn[2], bbox_wesn[3]), scale_rank=7)
-    
     flashes = ax.plot(flash_lons, 
                       flash_lats,
                       linestyle='None',
                       transform=crs.PlateCarree(), 
                       zorder=15)
 
-    plt.setp(flashes, **NEW_FLASH_STYLE)
+    mpl.artist.setp(flashes, **NEW_FLASH_STYLE)
 
-    #create flash tuples
-
+    #create flash dataframe
     this_frame_data = {'flash_lat': flash_lats, 'flash_lon': flash_lons, 'flash_time': scan_start}
     this_frame_df = pd.DataFrame(data=this_frame_data)
 
     if not start_of_period:
-
         hist_flashes = ax.plot(hist_flash_filtered['flash_lon'], 
                                hist_flash_filtered['flash_lat'],
                                linestyle='none',
                                transform=crs.PlateCarree(), 
                                zorder=10)
 
-        plt.setp(hist_flashes, **OLD_FLASH_STYLE)
+        mpl.artist.setp(hist_flashes, **OLD_FLASH_STYLE)
         hist_flashes_df = pd.concat([hist_flashes_df, this_frame_df], ignore_index=True)
     else:
         hist_flashes_df = this_frame_df
 
     if points:
-        input_pts = []
-        input_pt_labels = []
-        for point in points:
-            x_axis = point[0]
-            y_axis = point[1]
-            label = point[2]
-            
-            pt = ax.plot([y_axis],[x_axis])
-            input_pts += [pt]
-           
-            if POINT_LABEL_VISIBLE:
-                pt_label = ax.annotate(label, 
-                                       (y_axis, x_axis), 
-                                       horizontalalignment='center', 
-                                       verticalalignment='top', 
-                                       transform=crs.PlateCarree(), 
-                                       annotation_clip=True, 
-                                       zorder=30)
-                input_pt_labels = [pt_label]
+        plot_points(plt, ax,
+                    points,
+                    x_label_offset=X_LABEL_OFFSET,
+                    y_label_offset=Y_LABEL_OFFSET,
+                    draw_labels=POINT_LABEL_VISIBLE,
+                    draw_arrows=DRAW_LABEL_ARROWS,
+                    point_style=POINT_STYLE,
+                    point_label_style=POINT_LABEL_STYLE)
+    
+    plot_towns(ax, 
+               (bbox[2], bbox[3]),
+               (bbox[0], bbox[1]), 
+               scale_rank=7)
 
-        plt.setp(input_pts, **POINT_STYLE)
-        plt.setp(input_pt_labels, **POINT_LABEL_STYLE)
-        adjust_text(input_pt_labels)
+    draw_logo(ax)
 
-
-    plt.title(f'{orbital_slot.replace("-Test", "")} ({sat_id.replace("G", "GOES-")})\nCumulative Detected Lightning "Flashes"', loc='left', fontweight='bold', fontsize=15)
-    plt.title(f'Starting At {period_st.strftime("%d %B %Y %H:%M:%S UTC")}\nThrough {scan_end.strftime("%d %B %Y %H:%M:%S UTC")}', loc='right')
+    ax.set_title(f'{orbital_slot.replace("-Test", "")} ({sat_id.replace("G", "GOES-")})\nCumulative Detected Lightning "Flashes"', loc='left', fontweight='bold', fontsize=15)
+    ax.set_title(f'Starting At {period_st.strftime("%d %B %Y %H:%M:%S UTC")}\nThrough {scan_end.strftime("%d %B %Y %H:%M:%S UTC")}', loc='right')
+    ax.set_title(f'{cum_minutes} Min. Rolling Period', loc='center', fontsize=8, fontstyle='italic')
     
     file_name = sat_id + "_GLM_" + period_st.strftime('%Y%m%d_%H%M%S%Z') + "_to" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
     
@@ -266,8 +270,8 @@ def plot_cumulative_glm(file_path: str,
 
     dest_path = os.path.join(save_dir, file_name + ".png")
 
-    plt.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
-    plt.close()
+    fig.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
+    plt.close(fig)
 
     return hist_flashes_df
 
@@ -279,9 +283,12 @@ if __name__ == "__main__":
                         action='store_true',
                         default=False)
     parser.add_argument('-c', '--cumulative', 
-                        help='plot cumulative flashes over all time periods', 
-                        action='store_true',
-                        default=False)
+                        help=f'plot cumulative flashes over a rolling time period, optionally specified (default: {DEFAULT_HISTORY_MINUTES} min)', 
+                        type=int,
+                        nargs='?',
+                        metavar='min',
+                        const=DEFAULT_HISTORY_MINUTES,
+                        default=DEFAULT_HISTORY_MINUTES)
     parser.add_argument('--bbox', 
                         help='specify bounding box of the image (N-S-E-W, decimal lat/lon)', 
                         nargs=4, 
@@ -349,6 +356,7 @@ if __name__ == "__main__":
         plot_cumulative = True
         hist_data = pd.DataFrame(data=[], columns=['flash_lat', 'flash_lon', 'flash_time'])
         product_desc = "GLM flashes (cumulative)"
+        cum_period = args.cumulative
     else:
         raise ValueError("An option for plotting single-time or cumulative flashes must be specified.")
 
@@ -358,12 +366,18 @@ if __name__ == "__main__":
             with open(args.points_file, newline='') as pointcsv:
                 reader = csv.reader(pointcsv, delimiter=',')
                 for row in reader:
-                    point = (float(row[0]), float(row[1]), row[2])
+                    if row[2] == "" or row[2].isspace():
+                        marker = 'x'
+                    else:
+                        marker = row[2]
+
+                    if row[3] == "" or row[3].isspace():
+                        point = (float(row[0]), float(row[1]), marker, None)
+                    else:
+                        point = (float(row[0]), float(row[1]), marker, row[3])
                     points += [point]
         except Exception as err:
             raise err
-    else:
-        pass
 
     input_files = sorted(glob.glob(f'{input_dir}*.nc'))
     num_input_files = len(input_files)
@@ -379,6 +393,7 @@ if __name__ == "__main__":
                                                 points, 
                                                 bbox, 
                                                 hist_data, 
+                                                cum_period,
                                                 start_of_period=start_of_period)
                 if start_of_period:
                     start_of_period = False

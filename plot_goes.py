@@ -724,9 +724,10 @@ if __name__ == "__main__":
                         help='specify color pallete to be used (single band only)',
                         type=str,
                         default=None)
-    parser.add_argument('-r', '--reverse',
-                        help='reverse the color pallete',
-                        action='store_true')
+    parser.add_argument('--save-as-kmz',
+                        help='save as a georeferenced kmz rather than an image',
+                        action='store_true',
+                        dest='save_to_kmz')
     parser.add_argument('-cb', '--show-colorbar',
                         help='show a colorbar corresponding to pixel color (SB only)',
                         dest='show_colorbar',
@@ -783,16 +784,7 @@ if __name__ == "__main__":
         raise ValueError("A band or composite product to plot must be specified.")
 
     if args.pallete:
-        if args.reverse:
-            if args.pallete[-2:] != '_r':
-                pal = args.pallete + '_r'
-            else:
-                pal = args.pallete
-        else:
-            if args.pallete[-2:] == '_r':
-                pal = args.pallete[:-2]
-            else:
-                pal = args.pallete
+        pal = args.pallete
 
     points = []
     if args.points_file:
@@ -822,7 +814,7 @@ if __name__ == "__main__":
         for input_file_path in input_files:
 
             if plot_composite:
-                plot_composite_goes(input_file_path, save_dir, points, bbox, args.composite, save_to_kmz=True)
+                plot_composite_goes(input_file_path, save_dir, points, bbox, args.composite, save_to_kmz=args.save_to_kmz)
             else:
                 plot_single_band_goes(input_file_path, save_dir, args.band, points, bbox, pal, pixel_value=args.pixel_value, colorbar_visible=args.show_colorbar)
             progress.update()

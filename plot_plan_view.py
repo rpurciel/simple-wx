@@ -37,7 +37,7 @@ DEFAULT_LEVELS_TO_PLOT = [1000, 950, 900, 850, 700, 500, 300, 250]
 ## (Default: 300)
 FILE_DPI = 300
 
-PLOT_MORE_TOWNS = False
+TOWN_SCALE_RANK = 5
 
 '''
 Used to set the style of any user input points shown on the map.
@@ -122,6 +122,19 @@ HRRR_VARIABLE_TABLE = {
     'pressure': 'isobaricInhPa',
 }
 
+ERA5_VARIABLE_TABLE = {
+    'temp': 't',
+    'dpt': 'dpt',
+    'rh': 'r',
+    'gpm': 'z',
+    'vv': 'w',
+    'cldcvr': 'cc',
+    'u': 'u',
+    'v': 'v',
+    'mxgrat' : 'q',
+    'pressure': 'isobaricInhPa',
+}
+
 CONTOURF_ZORDER = 1
 CONTOUR_ZORDER = 3
 SHAPE_ZORDER = 6
@@ -162,15 +175,6 @@ def plot_plan_view_hrrr(file_path: str,
     filestr = ""
 
     prodstr, filestr = draw_contourf_lines(fig, ax,
-                                            data,
-                                            sel_level,
-                                            products,
-                                            'hrrr',
-                                            prodstr,
-                                            filestr,
-                                            **kwargs)
-
-    prodstr, filestr = draw_contour_lines(fig, ax,
                                            data,
                                            sel_level,
                                            products,
@@ -179,7 +183,7 @@ def plot_plan_view_hrrr(file_path: str,
                                            filestr,
                                            **kwargs)
 
-    prodstr, filestr = draw_wind_display(fig, ax,
+    prodstr, filestr = draw_contour_lines(fig, ax,
                                           data,
                                           sel_level,
                                           products,
@@ -187,6 +191,15 @@ def plot_plan_view_hrrr(file_path: str,
                                           prodstr,
                                           filestr,
                                           **kwargs)
+
+    prodstr, filestr = draw_wind_display(fig, ax,
+                                         data,
+                                         sel_level,
+                                         products,
+                                         'hrrr',
+                                         prodstr,
+                                         filestr,
+                                         **kwargs)
 
     if points:
         plot_points(plt, ax,
@@ -201,7 +214,7 @@ def plot_plan_view_hrrr(file_path: str,
     plot_towns(ax, 
                (bbox[2], bbox[3]),
                (bbox[0], bbox[1]), 
-               scale_rank=5 if PLOT_MORE_TOWNS else 3)
+               scale_rank=TOWN_SCALE_RANK)
 
     draw_logo(ax)
     
@@ -214,7 +227,7 @@ def plot_plan_view_hrrr(file_path: str,
     titlestr = ", ".join(prod_titles)
     titlestr = titlestr[2:]
     descstr = f"{str(data['isobaricInhPa'].values)} hPa Level\nValid at {np.datetime_as_string(data['valid_time'].values, timezone='UTC')[:-11].replace('T', ' ')}"
-    plt.title(f'HRRR Reanalysis {titlestr}', loc='left', fontweight='bold', fontsize=15)
+    ax.set_title(f'HRRR Reanalysis {titlestr}', loc='left', fontweight='bold', fontsize=15)
     plt.title(descstr, loc='right')
 
     file_name = "PlanView_" + str(sel_level) + filestr + "_" + file_day + "_" + file_time +"_ERA5"
@@ -224,8 +237,106 @@ def plot_plan_view_hrrr(file_path: str,
 
     dest_path = os.path.join(save_dir, file_name + ".png")
 
-    plt.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
-    plt.close()
+    fig.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
+    plt.close(fig)
+
+def plot_plan_view_era5(file_path: str,
+                        save_dir: str,
+                        sel_level: int,
+                        products: list[str, ...],
+                        points: list[tuple[float, float, str], ...],
+                        bbox: list[float, float, float, float],
+                        **kwargs) -> None:
+
+    if level == "9999": #Surface flag
+        sfc_flag = True
+    else:
+        sfc_flag = False
+
+    if sfc_flag:
+        sfc_data = xr.open_dataset(file_path, engine="cfgrib", filter_by_keys={'typeOfLevel': 'surface', 'stepType': 'instant'})
+        m2_data = xr.open_dataset(file_path, engine="cfgrib", filter_by_keys={'typeOfLevel': 'heightAboveGround', 'level': 2})
+        m10_data = xr.open_dataset(file_path, engine="cfgrib", filter_by_keys={'typeOfLevel': 'heightAboveGround', 'level': 10})
+
+    else:
+        col_data = xr.open_dataset(file_path, engine="cfgrib")
+        data = col_data.sel(isobaricInhPa=level)
+
+    file_time_str = str(data['time'].values)
+    file_day = file_time_str[:10].replace("-", "_")
+    file_time = file_time_str[11:16].replace(":", "") + "UTC"
+
+    fig, ax = define_hi_res_fig((bbox[2], bbox[3]),
+                                (bbox[0], bbox[1]))
+
+    prodstr = ""
+    filestr = ""
+
+    prodstr, filestr = draw_contourf_lines(fig, ax,
+                                           data,
+                                           sel_level,
+                                           products,
+                                           'era5',
+                                           prodstr,
+                                           filestr,
+                                           **kwargs)
+
+    prodstr, filestr = draw_contour_lines(fig, ax,
+                                          data,
+                                          sel_level,
+                                          products,
+                                          'era5',
+                                          prodstr,
+                                          filestr,
+                                          **kwargs)
+
+    prodstr, filestr = draw_wind_display(fig, ax,
+                                         data,
+                                         sel_level,
+                                         products,
+                                         'era5',
+                                         prodstr,
+                                         filestr,
+                                         **kwargs)
+
+    if points:
+        plot_points(plt, ax,
+                    points,
+                    x_label_offset=X_LABEL_OFFSET,
+                    y_label_offset=Y_LABEL_OFFSET,
+                    draw_labels=POINT_LABEL_VISIBLE,
+                    draw_arrows=DRAW_LABEL_ARROWS,
+                    point_style=POINT_STYLE,
+                    point_label_style=POINT_LABEL_STYLE)
+    
+    plot_towns(ax, 
+               (bbox[2], bbox[3]),
+               (bbox[0], bbox[1]), 
+               scale_rank=TOWN_SCALE_RANK)
+
+    draw_logo(ax)
+    
+    prod_titles = prodstr.split('#')
+    if len(prod_titles[1:]) > 1:
+        prod_titles[-1] = "and " + prod_titles[-1]
+        if len(prodstr) >= 40:
+            prod_titles[round(len(prod_titles)/2)] = '\n' + prod_titles[round(len(prod_titles)/2)]
+    
+    titlestr = ", ".join(prod_titles)
+    titlestr = titlestr[2:]
+    descstr = f"{str(data['isobaricInhPa'].values)} hPa Level\nValid at {np.datetime_as_string(data['valid_time'].values, timezone='UTC')[:-11].replace('T', ' ')}"
+    ax.set_title(f'ERA5 Reanalysis {titlestr}', loc='left', fontweight='bold', fontsize=15)
+    ax.set_title(descstr, loc='right')
+
+    file_name = "PlanView_" + str(sel_level) + filestr + "_" + file_day + "_" + file_time +"_ERA5"
+    
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    dest_path = os.path.join(save_dir, file_name + ".png")
+
+    fig.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
+    plt.close(fig)
 
 def draw_contourf_lines(fig: mpl.figure.Figure,
                         ax: mpl.axes.Axes,
@@ -241,6 +352,11 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
         vtable = HRRR_VARIABLE_TABLE
         lat = data.variables['latitude'][:]
         lon = data.variables['longitude'][:]
+    elif model == 'era5':
+        vtable = ERA5_VARIABLE_TABLE
+        lat = data.variables['latitude'][:]
+        lon = data.variables['longitude'][:]
+
 
 
     if "cldcvr_cf" in products:
@@ -410,6 +526,10 @@ def draw_contour_lines(fig: mpl.figure.Figure,
         vtable = HRRR_VARIABLE_TABLE
         lat = data.variables['latitude'][:]
         lon = data.variables['longitude'][:]
+    elif model == 'era5':
+        vtable = ERA5_VARIABLE_TABLE
+        lat = data.variables['latitude'][:]
+        lon = data.variables['longitude'][:]
 
 
     if "gpm_c" in products:
@@ -477,7 +597,10 @@ def draw_wind_display(fig: mpl.figure.Figure,
 
     if model == 'hrrr':
         vtable = HRRR_VARIABLE_TABLE
-
+        lat = data.variables['latitude'][:]
+        lon = data.variables['longitude'][:]
+    elif model == 'era5':
+        vtable = ERA5_VARIABLE_TABLE
         lat = data.variables['latitude'][:]
         lon = data.variables['longitude'][:]
 
