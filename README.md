@@ -147,9 +147,6 @@ Options
 
 ## Creating/Transforming Scripts
 
-> [!Note]
-> Currently only ERA5 and HRRR analysis files are supported.
-
 <details>
 <summary>create_raob_sounding.py</summary>
 

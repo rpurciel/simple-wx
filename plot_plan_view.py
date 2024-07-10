@@ -37,14 +37,14 @@ DEFAULT_LEVELS_TO_PLOT = [1000, 950, 900, 850, 700, 500, 300, 250]
 ## (Default: 300)
 FILE_DPI = 300
 
-TOWN_SCALE_RANK = 5
+TOWN_SCALE_RANK = 14
 
 '''
 Used to set the style of any user input points shown on the map.
 POINT_STYLE is used for the point(s), and POINT_LABEL_STYLE is used for any
 point label(s) given. No labels are shown if POINT_LABEL_VISIBLE is False.
 '''
-POINT_STYLE = {'color': 'black', 'markersize': 10, 'markeredgecolor': 'black'}
+POINT_STYLE = {'color': 'white', 'markersize': 18, 'markeredgecolor': 'red'}
 POINT_LABEL_VISIBLE = True
 DRAW_LABEL_ARROWS = True
 POINT_LABEL_STYLE = {'color': 'black', 'fontsize': 14, 'fontweight': 'bold'}
@@ -107,7 +107,8 @@ from tqdm.auto import tqdm
 from adjustText import adjust_text 
 
 from __internal_funcs import (plot_towns, draw_logo, 
-                              plot_points, define_hi_res_fig)
+                              plot_points, define_hi_res_fig,
+                              define_gearth_compat_fig, save_figs_to_kml)
 
 HRRR_VARIABLE_TABLE = {
     'temp': 't',
@@ -168,8 +169,16 @@ def plot_plan_view_hrrr(file_path: str,
     file_day = file_time_str[:10].replace("-", "_")
     file_time = file_time_str[11:16].replace(":", "") + "UTC"
 
-    fig, ax = define_hi_res_fig((bbox[2], bbox[3]),
-                                (bbox[0], bbox[1]))
+    if kwargs.get('save_to_kmz'):  
+        fig, ax, cbfig, cbax = define_gearth_compat_fig((bbox[2], bbox[3]),
+                                                        (bbox[0], bbox[1]))
+
+    else:
+        fig, ax = define_hi_res_fig((bbox[2], bbox[3]),
+                                    (bbox[0], bbox[1]))
+
+        cbfig = None
+        cbax = None
 
     prodstr = ""
     filestr = ""
@@ -181,6 +190,8 @@ def plot_plan_view_hrrr(file_path: str,
                                            'hrrr',
                                            prodstr,
                                            filestr,
+                                           fig_for_cb=cbfig,
+                                           ax_for_cb=cbax,
                                            **kwargs)
 
     prodstr, filestr = draw_contour_lines(fig, ax,
@@ -210,14 +221,7 @@ def plot_plan_view_hrrr(file_path: str,
                     draw_arrows=DRAW_LABEL_ARROWS,
                     point_style=POINT_STYLE,
                     point_label_style=POINT_LABEL_STYLE)
-    
-    plot_towns(ax, 
-               (bbox[2], bbox[3]),
-               (bbox[0], bbox[1]), 
-               scale_rank=TOWN_SCALE_RANK)
 
-    draw_logo(ax)
-    
     prod_titles = prodstr.split('#')
     if len(prod_titles[1:]) > 1:
         prod_titles[-1] = "and " + prod_titles[-1]
@@ -226,19 +230,49 @@ def plot_plan_view_hrrr(file_path: str,
     
     titlestr = ", ".join(prod_titles)
     titlestr = titlestr[2:]
-    descstr = f"{str(data['isobaricInhPa'].values)} hPa Level\nValid at {np.datetime_as_string(data['valid_time'].values, timezone='UTC')[:-11].replace('T', ' ')}"
-    ax.set_title(f'HRRR Reanalysis {titlestr}', loc='left', fontweight='bold', fontsize=15)
-    plt.title(descstr, loc='right')
 
-    file_name = "PlanView_" + str(sel_level) + filestr + "_" + file_day + "_" + file_time +"_ERA5"
-    
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+    if kwargs.get('save_to_kmz'):
+        file_name = "PlanView_" + str(sel_level) + filestr + "_" + file_day + "_" + file_time +"_HRRR"
+        layer_name = f"HRRR Reanalysis at {np.datetime_as_string(data['valid_time'].values, timezone='UTC')[:-11].replace('T', ' ')} UTC"
+        layer_desc = titlestr.replace('/\n', ' ') + f', at {sel_level} hPa level'
+        
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
 
-    dest_path = os.path.join(save_dir, file_name + ".png")
+        dest_path = os.path.join(save_dir, file_name + ".kmz")
 
-    fig.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
-    plt.close(fig)
+        save_figs_to_kml(dest_path,
+                         (bbox[2], bbox[3]),
+                         (bbox[0], bbox[1]),
+                         fig,
+                         [layer_name],
+                         [layer_desc])
+
+        plt.close(fig)
+        if cbfig:
+            plt.close(cbfig)
+
+    else:
+        plot_towns(ax, 
+                   (bbox[2], bbox[3]),
+                   (bbox[0], bbox[1]), 
+                   scale_rank=TOWN_SCALE_RANK)
+
+        draw_logo(ax)
+        
+        descstr = f"{str(data['isobaricInhPa'].values)} hPa Level\nValid at {np.datetime_as_string(data['valid_time'].values, timezone='UTC')[:-11].replace('T', ' ')} UTC"
+        ax.set_title(f'HRRR Reanalysis {titlestr}', loc='left', fontweight='bold', fontsize=15)
+        plt.title(descstr, loc='right')
+
+        file_name = "PlanView_" + str(sel_level) + filestr + "_" + file_day + "_" + file_time +"_ERA5"
+        
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        dest_path = os.path.join(save_dir, file_name + ".png")
+
+        fig.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
+        plt.close(fig)
 
 def plot_plan_view_era5(file_path: str,
                         save_dir: str,
@@ -266,8 +300,16 @@ def plot_plan_view_era5(file_path: str,
     file_day = file_time_str[:10].replace("-", "_")
     file_time = file_time_str[11:16].replace(":", "") + "UTC"
 
-    fig, ax = define_hi_res_fig((bbox[2], bbox[3]),
-                                (bbox[0], bbox[1]))
+    if kwargs.get('save_to_kmz'):  
+        fig, ax, cbfig, cbax = define_gearth_compat_fig((bbox[2], bbox[3]),
+                                                        (bbox[0], bbox[1]))
+
+    else:
+        fig, ax = define_hi_res_fig((bbox[2], bbox[3]),
+                                    (bbox[0], bbox[1]))
+
+        cbfig = None
+        cbax = None
 
     prodstr = ""
     filestr = ""
@@ -279,6 +321,8 @@ def plot_plan_view_era5(file_path: str,
                                            'era5',
                                            prodstr,
                                            filestr,
+                                           fig_for_cb=cbfig,
+                                           ax_for_cb=cbax,
                                            **kwargs)
 
     prodstr, filestr = draw_contour_lines(fig, ax,
@@ -309,13 +353,6 @@ def plot_plan_view_era5(file_path: str,
                     point_style=POINT_STYLE,
                     point_label_style=POINT_LABEL_STYLE)
     
-    plot_towns(ax, 
-               (bbox[2], bbox[3]),
-               (bbox[0], bbox[1]), 
-               scale_rank=TOWN_SCALE_RANK)
-
-    draw_logo(ax)
-    
     prod_titles = prodstr.split('#')
     if len(prod_titles[1:]) > 1:
         prod_titles[-1] = "and " + prod_titles[-1]
@@ -324,19 +361,49 @@ def plot_plan_view_era5(file_path: str,
     
     titlestr = ", ".join(prod_titles)
     titlestr = titlestr[2:]
-    descstr = f"{str(data['isobaricInhPa'].values)} hPa Level\nValid at {np.datetime_as_string(data['valid_time'].values, timezone='UTC')[:-11].replace('T', ' ')}"
-    ax.set_title(f'ERA5 Reanalysis {titlestr}', loc='left', fontweight='bold', fontsize=15)
-    ax.set_title(descstr, loc='right')
 
-    file_name = "PlanView_" + str(sel_level) + filestr + "_" + file_day + "_" + file_time +"_ERA5"
+    if kwargs.get('save_to_kmz'):
+        file_name = "PlanView_" + str(sel_level) + filestr + "_" + file_day + "_" + file_time +"_ERA5"
+        layer_name = f"ERA5 Reanalysis at {np.datetime_as_string(data['valid_time'].values, timezone='UTC')[:-11].replace('T', ' ')} UTC"
+        layer_desc = titlestr.replace('/\n', ' ') + f', at {sel_level} hPa level'
+        
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        dest_path = os.path.join(save_dir, file_name + ".kmz")
+
+        save_figs_to_kml(dest_path,
+                         (bbox[2], bbox[3]),
+                         (bbox[0], bbox[1]),
+                         fig,
+                         [layer_name],
+                         [layer_desc])
+
+        plt.close(fig)
+        if cbfig:
+            plt.close(cbfig)
+
+    else:
+        plot_towns(ax, 
+               (bbox[2], bbox[3]),
+               (bbox[0], bbox[1]), 
+               scale_rank=TOWN_SCALE_RANK)
+
+        draw_logo(ax)
     
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+        descstr = f"{str(data['isobaricInhPa'].values)} hPa Level\nValid at {np.datetime_as_string(data['valid_time'].values, timezone='UTC')[:-11].replace('T', ' ')} UTC"
+        ax.set_title(f'ERA5 Reanalysis {titlestr}', loc='left', fontweight='bold', fontsize=15)
+        ax.set_title(descstr, loc='right')
 
-    dest_path = os.path.join(save_dir, file_name + ".png")
+        file_name = "PlanView_" + str(sel_level) + filestr + "_" + file_day + "_" + file_time +"_ERA5"
+        
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
 
-    fig.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
-    plt.close(fig)
+        dest_path = os.path.join(save_dir, file_name + ".png")
+
+        fig.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
+        plt.close(fig)
 
 def draw_contourf_lines(fig: mpl.figure.Figure,
                         ax: mpl.axes.Axes,
@@ -346,7 +413,21 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
                         model: str,
                         prodstr: str,
                         prodabbr: str,
+                        fig_for_cb: mpl.figure.Figure = None,
+                        ax_for_cb: mpl.axes.Axes = None,
                         **kwargs) -> tuple[str, str]:
+
+    if fig_for_cb and ax_for_cb:
+        cb_fig = fig_for_cb
+        cb_ax = ax_for_cb
+
+        cbar_opts = {'rotation': -90, 'color': 'k', 'labelpad': 20}
+    else:
+        cb_fig = fig
+        cb_ax = None
+
+        cbar_opts = {}
+
 
     if model == 'hrrr':
         vtable = HRRR_VARIABLE_TABLE
@@ -356,7 +437,6 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
         vtable = ERA5_VARIABLE_TABLE
         lat = data.variables['latitude'][:]
         lon = data.variables['longitude'][:]
-
 
 
     if "cldcvr_cf" in products:
@@ -382,12 +462,13 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
                                        vmin=levels.min(),
                                        vmax=levels.max(),
                                        zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
-        cb = fig.colorbar(var_contourf, 
+        cb = cb_fig.colorbar(var_contourf, 
                           ax=ax, 
+                          cax=cb_ax,
                           ticks=levels[::2], 
                           orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
                           shrink=0.77)
-        cb.set_label('Fraction of Cloud Cover', size='x-large')
+        cb.set_label('Fraction of Cloud Cover', size='x-large', **cbar_opts)
 
         prodstr += "#Fraction of Cloud Cover (shaded)"
         prodabbr += "_CC"
@@ -417,13 +498,14 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
                                        vmax=levels.max(),
                                        extend='max',
                                        zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
-        cb = fig.colorbar(var_contourf, 
+        cb = cb_fig.colorbar(var_contourf, 
                           ax=ax, 
+                          cax=cb_ax,
                           ticks=levels[::2], 
                           orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
                           shrink=0.77,
                           extendrect=True)
-        cb.set_label('Relative Humidty (%)', size='x-large')
+        cb.set_label('Relative Humidty (%)', size='x-large', **cbar_opts)
 
         prodstr += "#Relative Humidity (%, shaded)"
         prodabbr += "_RH"
@@ -455,12 +537,13 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
                                        vmax=levels.max(),
                                        extend='max',
                                        zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
-        cb = fig.colorbar(var_contourf, 
+        cb = cb_fig.colorbar(var_contourf, 
                           ax=ax, 
+                          cax=cb_ax,
                           ticks=levels[::2], 
                           orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
                           shrink=0.77)
-        cb.set_label('Wind Speed (kts)', size='x-large')
+        cb.set_label('Wind Speed (kts)', size='x-large', **cbar_opts)
 
         prodstr += "#Wind Speed (kts, shaded)"
         prodabbr += "_WS"
@@ -498,12 +581,13 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
                                        vmax=levels.max(),
                                        extend='both',
                                        zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
-        cb = fig.colorbar(var_contourf, 
+        cb = cb_fig.colorbar(var_contourf, 
                           ax=ax, 
+                          cax=cb_ax,
                           ticks=levels[::2], 
                           orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
                           shrink=0.77)
-        cb.set_label('Vertical Velocity (ft/s)', size='x-large')
+        cb.set_label('Vertical Velocity (ft/s)', size='x-large', **cbar_opts)
 
         prodstr += "#Vertical Velocity (ft/s, shaded)"
         prodabbr += "_VV"
@@ -593,7 +677,7 @@ def draw_wind_display(fig: mpl.figure.Figure,
                       prodabbr: str,
                       **kwargs) -> tuple[str, str]:
 
-    slicer_idx = kwargs.pop('wind_display_indexing', 6)
+    slicer_idx = kwargs.pop('wind_display_indexing', 2)
 
     if model == 'hrrr':
         vtable = HRRR_VARIABLE_TABLE
@@ -611,7 +695,15 @@ def draw_wind_display(fig: mpl.figure.Figure,
 
     if "wind_vectors" in products:
         if slicer_idx > 0:
-            obj = ax.quiver(lon[::slicer_idx], lat[::slicer_idx], 
+            if model == 'era5':
+                obj = ax.quiver(lon[::slicer_idx], lat[::slicer_idx], 
+                            ukt[::slicer_idx, ::slicer_idx], 
+                            vkt[::slicer_idx, ::slicer_idx], 
+                            color=kwargs.pop('wind_display_color', 'greenyellow'), 
+                            transform=crs.PlateCarree(),
+                            zorder=kwargs.pop('wind_display_zorder', SHAPE_ZORDER))
+            else:
+                obj = ax.quiver(lon[::slicer_idx, ::slicer_idx], lat[::slicer_idx, ::slicer_idx], 
                             ukt[::slicer_idx, ::slicer_idx], 
                             vkt[::slicer_idx, ::slicer_idx], 
                             color=kwargs.pop('wind_display_color', 'greenyellow'), 
@@ -628,13 +720,22 @@ def draw_wind_display(fig: mpl.figure.Figure,
 
     if "wind_barbs" in products:
         if slicer_idx > 0:
-            obj = ax.barbs(lon[::slicer_idx, ::slicer_idx], lat[::slicer_idx, ::slicer_idx], 
-                           ukt[::slicer_idx, ::slicer_idx], 
-                           vkt[::slicer_idx, ::slicer_idx], 
-                           color=kwargs.pop('wind_display_color', 'greenyellow'), 
-                           length=kwargs.pop('wind_vector_length', 6), 
-                           transform=crs.PlateCarree(),
-                           zorder=kwargs.pop('wind_display_zorder', SHAPE_ZORDER))
+            if model == 'era5':
+                obj = ax.barbs(lon[::slicer_idx], lat[::slicer_idx], 
+                               ukt[::slicer_idx, ::slicer_idx], 
+                               vkt[::slicer_idx, ::slicer_idx], 
+                               color=kwargs.pop('wind_display_color', 'greenyellow'), 
+                               length=kwargs.pop('wind_vector_length', 6), 
+                               transform=crs.PlateCarree(),
+                               zorder=kwargs.pop('wind_display_zorder', SHAPE_ZORDER))
+            else:
+                obj = ax.barbs(lon[::slicer_idx, ::slicer_idx], lat[::slicer_idx, ::slicer_idx], 
+                               ukt[::slicer_idx, ::slicer_idx], 
+                               vkt[::slicer_idx, ::slicer_idx], 
+                               color=kwargs.pop('wind_display_color', 'greenyellow'), 
+                               length=kwargs.pop('wind_vector_length', 6), 
+                               transform=crs.PlateCarree(),
+                               zorder=kwargs.pop('wind_display_zorder', SHAPE_ZORDER))
         else:
             obj = ax.barbs(lon, lat, 
                            ukt, 
@@ -714,6 +815,11 @@ if __name__ == "__main__":
                         metavar='file_path',
                         dest='settings_file',
                         default=None)
+    parser.add_argument('--save-as-kmz', 
+                        help='save outputs as georeferenced KMZ files instead of images', 
+                        action='store_true',
+                        dest='save_to_kmz',
+                        default=False)
     parser.add_argument('model',  
                         help='specify data from what model is to be used. will error or produce undefined result if data format differs from specifed model',
                         choices=['hrrr', 'gfs', 'era5', 'wrf'],
@@ -776,6 +882,10 @@ if __name__ == "__main__":
     else:
         user_settings = dict()
 
+    if args.save_to_kmz:
+        user_settings.update({'save_to_kmz': True})
+
+
     points = []
     if args.points_file:
         try:
@@ -819,6 +929,14 @@ if __name__ == "__main__":
             for level in plot_levels:
                 if args.model == "hrrr":
                     plot_plan_view_hrrr(input_file_path, 
+                                        save_dir, 
+                                        level, 
+                                        args.variables, 
+                                        points, 
+                                        bbox, 
+                                        **user_settings)
+                elif args.model == "era5":
+                    plot_plan_view_era5(input_file_path, 
                                         save_dir, 
                                         level, 
                                         args.variables, 

@@ -259,7 +259,8 @@ def parse_hrrr_data(file_path: str,
     sfc_u_kts = sfc_u_ms.to(ureg('kts'))
     sfc_v_kts = sfc_v_ms.to(ureg('kts'))
 
-    sfc_height = units.Quantity(point_sfc.orog.data, 'm')
+    sfc_geopot = units.Quantity(point_sfc.orog.data, 'm**2/s**2')
+    sfc_height = mpcalc.geopotential_to_height(sfc_geopot)
 
     surface_data = pd.DataFrame(data=[sfc_press_hpa.magnitude,
                                       sfc_temp_c.magnitude,

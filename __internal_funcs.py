@@ -308,7 +308,7 @@ def define_gearth_compat_fig(lon_bounds: tuple[float, float],
                              projection: cartopy.crs = ccrs.PlateCarree(),
                              draw_earth_features: bool = False,
                              draw_gridlines: bool = False,
-                             dpi_pixels: int = 1024) -> tuple[mpl.figure.Figure, mpl.axes.Axes]:
+                             dpi_pixels: int = 1024) -> tuple[mpl.figure.Figure, mpl.axes.Axes, mpl.figure.Figure, mpl.axes.Axes]:
 
     fig_x_size = np.ptp([max(lon_bounds), min(lon_bounds)]) * np.cos(np.mean([min(lat_bounds), max(lat_bounds)]) * np.pi/180.)
     fig_y_size = np.ptp([max(lat_bounds), min(lat_bounds)])
@@ -361,7 +361,19 @@ def define_gearth_compat_fig(lon_bounds: tuple[float, float],
                                                      1))
 
     ax.set_axis_off()
-    return fig, ax   
+
+    ##Defining a figure to be used as a "colorbar" overlay,
+    ##which can be pinned to the edge of the screen when saved
+
+    cbfig = plt.figure(figsize=(1.0, 4.0), 
+                       facecolor=None, 
+                       frameon=True)
+    cbax = cbfig.add_axes([0.0, 0.05, 0.2, 0.9])
+    cbax.set_facecolor('white')
+
+    cbfig.savefig('legend.png', transparent=False, facecolor='White', edgecolor='White', format='png') 
+
+    return fig, ax, cbfig, cbax   
 
 def save_figs_to_kml(save_path: str,
                      lon_bounds: tuple[float, float],
@@ -369,7 +381,7 @@ def save_figs_to_kml(save_path: str,
                      layer_figs: list[mpl.figure.Figure, ...] | list[str, ...],
                      layer_names: list[str, ...],
                      layer_descs: list[str, ...],
-                     colorbar_fig: str = None,
+                     colorbar_fig: mpl.figure.Figure | str = None,
                      **kwargs) -> None:
 
     from simplekml import (Kml, OverlayXY, ScreenXY, Units, RotationXY,
@@ -386,6 +398,18 @@ def save_figs_to_kml(save_path: str,
             paths_to_figs += [fig_path]
     elif type(layer_figs) is str:
         paths_to_figs = layer_figs
+
+    if type(colorbar_fig) is mpl.figure.Figure:
+        fig_path = os.path.join(os.getcwd(), f'TEMP_{uuid4().hex}.png')
+        colorbar_fig.savefig(fig_path, 
+                             bbox_inches="tight", 
+                             dpi=600, 
+                             transparent=False,
+                             facecolor='White',
+                             edgecolor='White')
+        path_to_cb = fig_path
+    elif type(colorbar_fig) is str:
+        path_to_cb = colorbar_fig
 
     kml = Kml()
     camera = Camera(latitude=np.mean([max(lat_bounds), min(lat_bounds)]),
@@ -417,7 +441,7 @@ def save_figs_to_kml(save_path: str,
 
     if colorbar_fig:  # Options for colorbar are hard-coded (to avoid a big mess).
         screen = kml.newscreenoverlay(name='Legend')
-        screen.icon.href = colorbar
+        screen.icon.href = path_to_cb
         screen.overlayxy = OverlayXY(x=0, y=0,
                                      xunits=Units.fraction,
                                      yunits=Units.fraction)
@@ -437,6 +461,9 @@ def save_figs_to_kml(save_path: str,
     if type(layer_figs) is mpl.figure.Figure:
         for figure in paths_to_figs:
             os.remove(figure)
+
+    if colorbar_fig:
+        os.remove(path_to_cb)
 
 def generate_verification_plot(lat: float | list[float, ...], 
                                lon: float | list[float, ...], 
