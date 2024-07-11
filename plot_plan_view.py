@@ -246,7 +246,8 @@ def plot_plan_view_hrrr(file_path: str,
                          (bbox[0], bbox[1]),
                          fig,
                          [layer_name],
-                         [layer_desc])
+                         [layer_desc],
+                         colorbar_fig=cbfig)
 
         plt.close(fig)
         if cbfig:
@@ -377,7 +378,8 @@ def plot_plan_view_era5(file_path: str,
                          (bbox[0], bbox[1]),
                          fig,
                          [layer_name],
-                         [layer_desc])
+                         [layer_desc],
+                         colorbar_fig=cbfig)
 
         plt.close(fig)
         if cbfig:

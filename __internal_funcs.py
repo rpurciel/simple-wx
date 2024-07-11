@@ -3,6 +3,7 @@ import sys
 from typing import Any
 from collections.abc import Callable
 from uuid import uuid4
+from glob import glob 
 
 import numpy as np
 import pandas as pd
@@ -371,8 +372,6 @@ def define_gearth_compat_fig(lon_bounds: tuple[float, float],
     cbax = cbfig.add_axes([0.0, 0.05, 0.2, 0.9])
     cbax.set_facecolor('white')
 
-    cbfig.savefig('legend.png', transparent=False, facecolor='White', edgecolor='White', format='png') 
-
     return fig, ax, cbfig, cbax   
 
 def save_figs_to_kml(save_path: str,
@@ -403,7 +402,7 @@ def save_figs_to_kml(save_path: str,
         fig_path = os.path.join(os.getcwd(), f'TEMP_{uuid4().hex}.png')
         colorbar_fig.savefig(fig_path, 
                              bbox_inches="tight", 
-                             dpi=600, 
+                             dpi=150, 
                              transparent=False,
                              facecolor='White',
                              edgecolor='White')
@@ -598,7 +597,7 @@ def remove_files(target_directory: str,
             verbose_callback('Error: Directory to remove files from does not exist.')
         return -1
 
-    files = glob.glob(f'{target_directory}*.{file_ext}')
+    files = glob(f'{target_directory}*.{file_ext}')
     num_files = len(files)
     removed_files = 0
 

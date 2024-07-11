@@ -47,7 +47,7 @@ import pint
 from wrf import getvar
 from netCDF4 import Dataset
 
-from __internal_funcs import plot_towns, generate_verification_plot
+from __internal_funcs import (plot_towns, generate_verification_plot, remove_files)
 
 np.seterr(divide = 'ignore', invalid='ignore')
 
@@ -243,6 +243,8 @@ def parse_hrrr_data(file_path: str,
     col_u_kts = col_u_ms.to(ureg('kts'))
     col_v_kts = col_v_ms.to(ureg('kts'))
 
+    print(point_col.gh)
+
     col_geopot = units.Quantity(point_col.gh.data, 'm**2/s**2')
     col_layer_height = mpcalc.geopotential_to_height(col_geopot)
 
@@ -260,6 +262,7 @@ def parse_hrrr_data(file_path: str,
     sfc_v_kts = sfc_v_ms.to(ureg('kts'))
 
     sfc_geopot = units.Quantity(point_sfc.orog.data, 'm**2/s**2')
+    print(point_sfc.orog)
     sfc_height = mpcalc.geopotential_to_height(sfc_geopot)
 
     surface_data = pd.DataFrame(data=[sfc_press_hpa.magnitude,
@@ -267,14 +270,14 @@ def parse_hrrr_data(file_path: str,
                                       sfc_dpt_c.magnitude,
                                       sfc_u_kts.magnitude,
                                       sfc_v_kts.magnitude,
-                                      sfc_height.magnitude])
+                                      sfc_geopot.magnitude])
 
     column_data = pd.DataFrame(data=[col_press_hpa.magnitude,
                                      col_temp_c.magnitude,
                                      col_dpt_c.magnitude,
                                      col_u_kts.magnitude,
                                      col_v_kts.magnitude,
-                                     col_layer_height.magnitude])
+                                     col_geopot.magnitude])
 
     #remove data that is below the surface level
     column_data = column_data.T
@@ -290,14 +293,14 @@ def parse_hrrr_data(file_path: str,
         lat_hemisphere = 'S'
 
     if sel_pt_lon >= 0:
-        lon_hemisphere = 'E'
-    else:
         lon_hemisphere = 'W'
+    else:
+        lon_hemisphere = 'E'
 
     internal_name = f'Pt: {round(lat, 4)} {round(orig_lon, 4)} Gd: {round(sel_pt_lat, 4)} {round(sel_pt_lon, 4)} Md: HRRR (No. {point_index})'
 
     header = {0:['RAOB/CSV','DTG','LAT','LON','ELEV','MOISTURE','WIND','GPM','MISSING','RAOB/DATA','PRES'],
-              1:[internal_name,date_str,np.abs(sel_pt_lat),np.abs(sel_pt_lon),sfc_height.magnitude,'TD','kts','MSL',-999,'','TEMP'],
+              1:[internal_name,date_str,np.abs(sel_pt_lat),np.abs(sel_pt_lon),sfc_geopot.magnitude,'TD','kts','MSL',-999,'','TEMP'],
               2:['','',lat_hemisphere,lon_hemisphere,'m','','U/V','','','','TD'],
               3:['','','','','','','','','','','UU'],
               4:['','','','','','','','','','','VV'],
@@ -465,9 +468,9 @@ def parse_era5_data(file_path: str,
         lat_hemisphere = 'S'
 
     if sel_pt_lon >= 0:
-        lon_hemisphere = 'E'
-    else:
         lon_hemisphere = 'W'
+    else:
+        lon_hemisphere = 'E'
 
     internal_name = f'Pt: {round(lat, 4)} {round(orig_lon, 4)} Gd: {round(sel_pt_lat, 4)} {round(sel_pt_lon, 4)} Md: ERA5 (No. {point_index})'
 
@@ -655,7 +658,7 @@ if __name__ == "__main__":
     elif args.cross_section:
         cs_points = []
         try:
-            with open(args.cross_section[0], newline='') as cspointcsv:
+            with open(args.cross_section[0], newline='', mode='r', encoding='utf-8-sig') as cspointcsv:
                 reader = csv.reader(cspointcsv, delimiter=',')
                 for row in reader:
                     cs_point = (float(row[0]), float(row[1]), datetime.strptime(str(row[2]), "%Y-%m-%d %H:%M:%S"))
@@ -846,6 +849,8 @@ if __name__ == "__main__":
         grid_df = pd.DataFrame(data=grid_pts, columns=['lat', 'lon'])
         grid_df.to_csv(os.path.join(save_dir, f"RAOB_ModelSoundings_Gridpoints_{args.model.upper()}.csv"), index=None)
         print("Used grid points saved to file.")
+
+    remove_files(input_dir)
 
     print("Done!")
 

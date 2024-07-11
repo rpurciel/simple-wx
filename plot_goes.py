@@ -17,7 +17,7 @@ POINT_STYLE is used for the point(s), and POINT_LABEL_STYLE is used for any
 point label(s) given. No labels are shown if POINT_LABEL_VISIBLE is False.
 '''
 POINT_STYLE = {'color': 'white', 'markersize': 4}
-POINT_LABEL_VISIBLE = True
+POINT_LABEL_VISIBLE = False
 POINT_LABEL_STYLE = {'color': 'white', 'fontsize': 10}
 DRAW_LABEL_ARROWS = True
 
@@ -78,13 +78,14 @@ from tqdm.auto import tqdm
 from adjustText import adjust_text
 import cmasher as cmr
 
-from __internal_funcs import (plot_towns, draw_logo, plot_points, define_gearth_compat_fig, save_figs_to_kml)
+from __internal_funcs import (plot_towns, draw_logo, plot_points, 
+                              define_gearth_compat_fig, save_figs_to_kml)
 
 matplotlib.use('agg')
 np.seterr(divide = 'ignore', invalid='ignore')
 
 #global params
-DEFAULT_BBOX = [51, 23.5, -64.4, -129.1] #CONUS - WESN
+DEFAULT_BBOX = [-129.1, -64.4, 23.5, 51] #CONUS - WESN
 
 DEF_GAMMA = 2.2
 
@@ -214,13 +215,22 @@ def plot_single_band_goes(file_path: str,
     if correct_gamma:
         sel_band = np.power(sel_band, 1/DEF_GAMMA)
 
-    fig = plt.figure(figsize=(16., 12.))
-    ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
+    if kwargs.get('save_to_kmz'):  
+        fig, ax, cbfig, cbax = define_gearth_compat_fig((bbox[2], bbox[3]),
+                                                        (bbox[0], bbox[1]))
+
+        cbar_opts = {'rotation': -90, 'color': 'k', 'labelpad': 20}
+
+    else:
+        fig, ax = define_hi_res_fig((bbox[2], bbox[3]),
+                                    (bbox[0], bbox[1]))
+
+        cbfig = fig
+        cbax = None
+
+        cbar_opts = {}
     
-    bbox_wesn = [bbox[3], bbox[2], bbox[1], bbox[0]]
-    ax.set_extent(bbox_wesn, crs=ccrs.PlateCarree())
-    
-    plt.imshow(sel_band, origin='upper',
+    ax.imshow(sel_band, origin='upper',
           extent=(x.min(), x.max(), y.min(), y.max()),
           transform=geog_data,
           interpolation='none',
@@ -228,17 +238,6 @@ def plot_single_band_goes(file_path: str,
           vmax = img_vmax,
           cmap = pallete)
 
-    if kwargs.get('save_to_kmz'):
-        gfig, gax = define_gearth_compat_fig((bbox_wesn[0], bbox_wesn[1]),
-                                             (bbox_wesn[2], bbox_wesn[3]))
-        gax.imshow(sel_band, 
-                   origin='upper',
-                   extent=(x.min(), x.max(), y.min(), y.max()),
-                   transform=geog_data,
-                   interpolation='none',
-                   vmin = img_vmin,
-                   vmax = img_vmax,
-                   cmap = pallete)
     
     # ir = [fk2 / (np.log((fk1/radiance) + 1)) - bc1] / bc2
     
@@ -268,32 +267,14 @@ def plot_single_band_goes(file_path: str,
                                 annotation_clip=False, 
                                 zorder=30)
 
-                    if kwargs.get('save_to_kmz'):
-                        gax.annotate(str(round(val, 1)), 
-                                (lon, lat),
-                                xytext=(X_PIX_VAL_OFFSET,Y_PIX_VAL_OFFSET),
-                                textcoords='offset points',
-                                horizontalalignment='right',
-                                verticalalignment='top', 
-                                color='black',
-                                clip_box=gax.bbox,
-                                fontsize=6,
-                                transform=crs.PlateCarree(),
-                                annotation_clip=False, 
-                                zorder=30)
-
     if kwargs.get('colorbar_visible'):
-        plt.colorbar(ax=ax, 
-                     orientation = "horizontal", 
-                     pad=.05,
-                     shrink=0.7,
-                     use_gridspec=False).set_label(cbar_label)
-    
-    states = NaturalEarthFeature(category="cultural", scale="50m", facecolor="none", name="admin_1_states_provinces")
-    ax.add_feature(states, linewidth=1.0, edgecolor="black")
-    ax.coastlines('50m', linewidth=1.5)
-    ax.add_feature(cartopy.feature.LAKES.with_scale('10m'), linestyle='-', linewidth=0.5, alpha=1,edgecolor='blue',facecolor='none')
-    ax.add_feature(cfeat.BORDERS, linewidth=1.5)
+        cb = cbfig.colorbar(ax=ax,
+                       cax=cbax,
+                       orientation = "horizontal", 
+                       pad=.05,
+                       shrink=0.7,
+                       use_gridspec=False)
+        cb.set_label(cbar_label, size='x-large', **cbar_opts)
 
     #POINT DRAWING
 
@@ -306,35 +287,52 @@ def plot_single_band_goes(file_path: str,
                     draw_arrows=DRAW_LABEL_ARROWS,
                     point_style=POINT_STYLE,
                     point_label_style=POINT_LABEL_STYLE)
-    
-    plot_towns(ax, 
-               (bbox_wesn[0], bbox_wesn[1]), 
-               (bbox_wesn[2], bbox_wesn[3]), 
-               scale_rank=5 if PLOT_MORE_TOWNS else 3)
-    draw_logo(ax)
-
-    title_info = orbital_slot.replace("-Test", "") + " (" + sat_id.replace("G", "GOES-") + ")\n" + IMPLEMENTED_BANDS[str(band)]
-    
-    plt.title(title_info, loc='left', fontweight='bold', fontsize=15)
-    plt.title('{}'.format(scan_end.strftime('%d %B %Y %H:%M UTC ')), loc='right')
-    
-    file_name = sat_id + "_" + sel_band_str + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
-    
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
 
     if kwargs.get('save_to_kmz'):
-        save_figs_to_kml(save_dir,
-                         (bbox_wesn[0], bbox_wesn[1]),
-                         (bbox_wesn[2], bbox_wesn[3]),
-                         gfig,
-                         scan_end.strftime('%Y%m%d_%H%M%S%Z'),
-                         title_info)
 
-    dest_path = os.path.join(save_dir, file_name + ".png")
+        file_name = sat_id + "_" + sel_band_str + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
+        layer_name = sat_id.replace("G", "GOES-") + " image at " + scan_end.strftime('%d %B %Y %H:%M UTC ')
+        layer_desc = IMPLEMENTED_BANDS[str(band)]
 
-    plt.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
-    plt.close()
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        dest_path = os.path.join(save_dir, file_name + ".kmz")
+
+        save_figs_to_kml(dest_path,
+                         (bbox[2], bbox[3]),
+                         (bbox[0], bbox[1]),
+                         fig,
+                         [layer_name],
+                         [layer_desc],
+                         colorbar_fig=cbfig if kwargs.get('colorbar_visible') else None)
+
+        plt.close(fig)
+        if cbfig:
+            plt.close(cbfig)
+
+    else:
+    
+        plot_towns(ax, 
+                  (bbox[2], bbox[3]),
+                  (bbox[0], bbox[1]), 
+                  scale_rank=TOWN_SCALE_RANK)
+        draw_logo(ax)
+
+        title_info = orbital_slot.replace("-Test", "") + " (" + sat_id.replace("G", "GOES-") + ")\n" + IMPLEMENTED_BANDS[str(band)]
+        
+        ax.set_title(title_info, loc='left', fontweight='bold', fontsize=15)
+        ax.set_title('{}'.format(scan_end.strftime('%d %B %Y %H:%M UTC ')), loc='right')
+        
+        file_name = sat_id + "_" + sel_band_str + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
+        
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        dest_path = os.path.join(save_dir, file_name + ".png")
+
+        fig.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
+        plt.close(fig)
 
 def plot_composite_goes(file_path: str, 
                         save_dir: str,
@@ -391,81 +389,96 @@ def plot_composite_goes(file_path: str,
     bbox_wesn = [bbox[3], bbox[2], bbox[1], bbox[0]]
     title_info = orbital_slot.replace("-Test", "") + " (" + sat_id.replace("G", "GOES-") + ")\n" + human_product_name + " Composite"
 
-    if kwargs.get('save_to_kmz'):
-        gfig, gax = define_gearth_compat_fig((bbox_wesn[0], bbox_wesn[1]),
-                                             (bbox_wesn[2], bbox_wesn[3]))
-        gax.imshow(rgb_composite, 
+    if kwargs.get('save_to_kmz'):  
+        fig, ax, cbfig, cbax = define_gearth_compat_fig((bbox[2], bbox[3]),
+                                                        (bbox[0], bbox[1]))
+
+        cbar_opts = {'rotation': -90, 'color': 'k', 'labelpad': 20}
+
+    else:
+        fig, ax = define_hi_res_fig((bbox[2], bbox[3]),
+                                    (bbox[0], bbox[1]))
+
+        cbfig = fig
+        cbax = None
+
+        cbar_opts = {}
+        
+    ax.imshow(rgb_composite, 
                origin='upper',
                extent=(x.min(), x.max(), y.min(), y.max()),
                transform=geog_data,
                interpolation='none')
-
-    else:
     
-        fig = plt.figure(figsize=(16., 12.))
-        ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
-
-        ax.set_extent(bbox_wesn, crs=ccrs.PlateCarree())
-        
-        plt.imshow(rgb_composite, 
-                   origin='upper',
-                   extent=(x.min(), x.max(), y.min(), y.max()),
-                   transform=geog_data,
-                   interpolation='none')
-        
-        if kwargs.get('colorbar'):
-            plt.colorbar(ax=ax, 
-                         orientation = "horizontal", 
-                         pad=.05).set_label(cbar_label)
-        
-        states = NaturalEarthFeature(category="cultural", scale="50m", facecolor="none", name="admin_1_states_provinces")
-        ax.add_feature(states, linewidth=1.0, edgecolor="black")
-        ax.coastlines('50m', linewidth=1.5)
-        ax.add_feature(cartopy.feature.LAKES.with_scale('10m'), linestyle='-', linewidth=0.5, alpha=1,edgecolor='blue',facecolor='none')
-        ax.add_feature(cfeat.BORDERS, linewidth=1.5)
+    if kwargs.get('colorbar_visible'):
+        cb = cbfig.colorbar(ax=ax,
+                       cax=cbax,
+                       orientation = "horizontal", 
+                       pad=.05,
+                       shrink=0.7,
+                       use_gridspec=False)
+        cb.set_label(cbar_label, size='x-large', **cbar_opts)
 
         #POINT DRAWING
 
-        if points:
-            plot_points(plt, ax,
-                points,
-                x_label_offset=X_LABEL_OFFSET,
-                y_label_offset=Y_LABEL_OFFSET,
-                draw_labels=POINT_LABEL_VISIBLE,
-                draw_arrows=DRAW_LABEL_ARROWS,
-                point_style=POINT_STYLE,
-                point_label_style=POINT_LABEL_STYLE)
-        
-        plot_towns(ax, 
-                   (bbox_wesn[0], bbox_wesn[1]), 
-                   (bbox_wesn[2], bbox_wesn[3]), 
-                   scale_rank=5 if PLOT_MORE_TOWNS else 3)
-        draw_logo(ax)
-        
-        title_info = orbital_slot.replace("-Test", "") + " (" + sat_id.replace("G", "GOES-") + ")\n" + human_product_name + " Composite"
-        plt.title(title_info, loc='left', fontweight='bold', fontsize=15)
-        plt.title('{}'.format(scan_end.strftime('%d %B %Y %H:%M:%S UTC ')), loc='right')
-
-    
-    file_name = sat_id + "_" + product + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
-    
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+    if points:
+        plot_points(plt, ax,
+            points,
+            x_label_offset=X_LABEL_OFFSET,
+            y_label_offset=Y_LABEL_OFFSET,
+            draw_labels=POINT_LABEL_VISIBLE,
+            draw_arrows=DRAW_LABEL_ARROWS,
+            point_style=POINT_STYLE,
+            point_label_style=POINT_LABEL_STYLE)
 
     if kwargs.get('save_to_kmz'):
+
+        file_name = sat_id + "_" + sel_band_str + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
+        layer_name = sat_id.replace("G", "GOES-") + " image at " + scan_end.strftime('%d %B %Y %H:%M UTC ')
+        layer_desc = f'{human_product_name} Composite'
+
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
         dest_path = os.path.join(save_dir, file_name + ".kmz")
+
         save_figs_to_kml(dest_path,
-                         (bbox_wesn[0], bbox_wesn[1]),
-                         (bbox_wesn[2], bbox_wesn[3]),
-                         gfig,
-                         scan_end.strftime('%Y%m%d_%H%M%S%Z'),
-                         title_info)
+                         (bbox[2], bbox[3]),
+                         (bbox[0], bbox[1]),
+                         fig,
+                         [layer_name],
+                         [layer_desc],
+                         colorbar_fig=cbfig if kwargs.get('colorbar_visible') else None)
+
+        plt.close(fig)
+        if cbfig:
+            plt.close(cbfig)
+
     else:
+    
+        plot_towns(ax, 
+                  (bbox[2], bbox[3]),
+                  (bbox[0], bbox[1]), 
+                  scale_rank=TOWN_SCALE_RANK)
+        draw_logo(ax)
+    
+        
+        title_info = orbital_slot.replace("-Test", "") + " (" + sat_id.replace("G", "GOES-") + ")\n" + human_product_name + " Composite"
+        ax.set_title(title_info, loc='left', fontweight='bold', fontsize=15)
+        ax.set_title('{}'.format(scan_end.strftime('%d %B %Y %H:%M:%S UTC ')), loc='right')
+        
+        file_name = sat_id + "_" + product + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
+        
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
         dest_path = os.path.join(save_dir, file_name + ".png")
 
-        plt.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
-        plt.close()
+        fig.savefig(dest_path, 
+                    bbox_inches="tight", 
+                    dpi=FILE_DPI)
 
+        plt.close(fig)
 
 def _calculate_pixel_lat_lon(proj_x, proj_y, proj_info):
 
@@ -751,7 +764,6 @@ if __name__ == "__main__":
 
     if args.bbox:
         bbox = args.bbox
-        ##TODO: Add a QC here?
     else:
         if args.center:
             center_lat = args.center[0]
@@ -759,6 +771,8 @@ if __name__ == "__main__":
             rad = args.center[2]
 
             bbox = [center_lat+rad, center_lat-rad, center_lon+rad, center_lon-rad] #NSEW
+        else: #no center or bbox params defined
+            bbox = [51, 23.5, -64.4, -129.1] #default, CONUS NSEW
 
     if args.input_file_directory[-1:] != "/":
         input_dir = args.input_file_directory + "/"
@@ -805,6 +819,17 @@ if __name__ == "__main__":
         except Exception as err:
             raise err
 
+    kwargs = {}
+    if args.save_to_kmz:
+        kwargs.update({'save_to_kmz': True})
+
+    if args.pixel_value:
+        kwargs.update({'pixel_value': True})
+
+    if args.show_colorbar:
+        kwargs.update({'colorbar_visible': True})
+
+
     input_files = sorted(glob.glob(f'{input_dir}*.nc'))
     num_input_files = len(input_files)
 
@@ -814,9 +839,20 @@ if __name__ == "__main__":
         for input_file_path in input_files:
 
             if plot_composite:
-                plot_composite_goes(input_file_path, save_dir, points, bbox, args.composite, save_to_kmz=args.save_to_kmz)
+                plot_composite_goes(input_file_path, 
+                                    save_dir, 
+                                    points, 
+                                    bbox, 
+                                    args.composite, 
+                                    **kwargs)
             else:
-                plot_single_band_goes(input_file_path, save_dir, args.band, points, bbox, pal, pixel_value=args.pixel_value, colorbar_visible=args.show_colorbar)
+                plot_single_band_goes(input_file_path, 
+                                      save_dir, 
+                                      args.band, 
+                                      points, 
+                                      bbox, 
+                                      pal, 
+                                      **kwargs)
             progress.update()
 
     print("Done!")
