@@ -368,11 +368,11 @@ def parse_era5_data(file_path: str,
 
     row_data = []
 
-    col_data = xr.open_dataset(file_path, engine="cfgrib", filter_by_keys={'typeOfLevel': 'isobaricInhPa'})
+    col_data = xr.open_dataset(file_path, engine="cfgrib", drop_variables='i10fg', filter_by_keys={'typeOfLevel': 'isobaricInhPa'})
 
     sfc_file_path = file_path.replace("UA", "SFC")
     if os.path.isfile(sfc_file_path):
-        sfc_data = xr.open_dataset(sfc_file_path, engine="cfgrib")
+        sfc_data = xr.open_dataset(sfc_file_path, drop_variables='i10fg', engine="cfgrib")
         use_sfc_data = True
     else:
         warnings.warn("Surface data was not found for ERA5. Absent surface data degrades sounding quality.")
@@ -627,6 +627,12 @@ if __name__ == "__main__":
                         metavar=('freq_str'),
                         dest='wrf_freq',
                         default=None)
+    parser.add_argument('--force-time', 
+                        help='specify for the script to create soundings for a cross-section, which takes input points and times and takes soundings corresponding to (the best match for) each of those points', 
+                        type=str,
+                        metavar=('point_file'),
+                        dest='forced_time',
+                        default=None)
     parser.add_argument('model',  
                         help='specify data from what model is to be used. will error or produce undefined result if data format differs from specifed model',
                         choices=['hrrr', 'gfs', 'era5', 'wrf'],
@@ -709,6 +715,11 @@ if __name__ == "__main__":
     else:
         wrf_freq = DEFAULT_WRF_INPUT_FREQUENCY
 
+    if args.forced_time:
+        forced_time = args.forced_time
+    else:
+        forced_time = None
+
     grid_pts = []
     point_idx = 0
 
@@ -725,6 +736,20 @@ if __name__ == "__main__":
                                                             cs_point[2],
                                                             point_idx,
                                                             dup_pts)
+                        if grid_pt:
+                            grid_pts.append(grid_pt)
+                        progress.update()
+                        point_idx += 1
+                elif args.model == "era5":
+                    for cs_point in cs_points:
+                        file_time = parse_file_times(file_times, forced_time, wrf_freq) if forced_time else parse_file_times(file_times, cs_point[2], wrf_freq)
+                        grid_pt, dup_pts = parse_era5_data(file_time,
+                                                          save_dir,
+                                                          cs_point[0],
+                                                          cs_point[1],
+                                                          cs_point[2],
+                                                          point_idx,
+                                                          dup_pts)
                         if grid_pt:
                             grid_pts.append(grid_pt)
                         progress.update()

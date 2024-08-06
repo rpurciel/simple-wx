@@ -1,6 +1,6 @@
 ## Set to True if you want more towns plotted on the map
 ## (Default: False)
-TOWN_SCALE_RANK = 5
+PLOT_MORE_TOWNS = False
 
 ## Set the DPI of the saved output file
 FILE_DPI = 300
@@ -16,22 +16,22 @@ Used to set the style of any user input points shown on the map.
 POINT_STYLE is used for the point(s), and POINT_LABEL_STYLE is used for any
 point label(s) given. No labels are shown if POINT_LABEL_VISIBLE is False.
 '''
-POINT_STYLE = {'color': 'black', 'markersize': 6}
-POINT_LABEL_VISIBLE = True
-POINT_LABEL_STYLE = {'color': 'black', 'fontsize': 12}
+POINT_STYLE = {'color': 'white', 'markersize': 4}
+POINT_LABEL_VISIBLE = False
+POINT_LABEL_STYLE = {'color': 'white', 'fontsize': 10}
 DRAW_LABEL_ARROWS = True
 
 
 ## Set the positioning of the labels relative to the points being plotted
 ## (Default: X=0.2, Y=0.1)
 Y_LABEL_OFFSET = -0.1
-X_LABEL_OFFSET = 1
+X_LABEL_OFFSET = 0.03
 
 ## Set the positioning of the pixel values relative to the upper-left corner
 ## of the pixel.
 ## (Default: X=5, Y=10)
-X_PIX_VAL_OFFSET = -8
-Y_PIX_VAL_OFFSET = -7
+X_PIX_VAL_OFFSET = 7
+Y_PIX_VAL_OFFSET = -15
 
 
 
@@ -44,10 +44,6 @@ Y_PIX_VAL_OFFSET = -7
 
 
 # 6/13/24 - Added cmasher (cmr) import for cmasher colormap support
-
-#TODO:
-#Add in ability to position points in CSV
-#Add in ability to use settings file (see plot_plan_view.py)
 
 
 
@@ -82,8 +78,7 @@ from tqdm.auto import tqdm
 from adjustText import adjust_text
 import cmasher as cmr
 
-from __internal_funcs import (plot_towns, draw_logo, plot_points,
-                              define_hi_res_fig,
+from __internal_funcs import (plot_towns, draw_logo, plot_points, 
                               define_gearth_compat_fig, save_figs_to_kml)
 
 matplotlib.use('agg')
@@ -182,7 +177,7 @@ def plot_single_band_goes(file_path: str,
 
     x = data.x
     y = data.y
-    
+
     pix_lats, pix_lons = _calculate_pixel_lat_lon(x, y, proj_info)
 
     data = data.metpy.parse_cf('CMI_C02')
@@ -235,14 +230,13 @@ def plot_single_band_goes(file_path: str,
 
         cbar_opts = {}
     
-    img = ax.imshow(sel_band, 
-                    origin='upper',
-                    extent=(x.min(), x.max(), y.min(), y.max()),
-                    transform=geog_data,
-                    interpolation='none',
-                    vmin = img_vmin,
-                    vmax = img_vmax,
-                    cmap = pallete)
+    ax.imshow(sel_band, origin='upper',
+          extent=(x.min(), x.max(), y.min(), y.max()),
+          transform=geog_data,
+          interpolation='none',
+          vmin = img_vmin,
+          vmax = img_vmax,
+          cmap = pallete)
 
     
     # ir = [fk2 / (np.log((fk1/radiance) + 1)) - bc1] / bc2
@@ -251,11 +245,11 @@ def plot_single_band_goes(file_path: str,
 
     if kwargs.get('pixel_value'):
 
-        pix_lats[pix_lats > bbox[0] + 1] = np.nan
-        pix_lats[pix_lats < bbox[1] - 1] = np.nan
+        pix_lats[pix_lats > bbox_wesn[3] + 1] = np.nan
+        pix_lats[pix_lats < bbox_wesn[2] - 1] = np.nan
 
-        pix_lons[pix_lons > bbox[2] + 1] = np.nan
-        pix_lons[pix_lons < bbox[3] - 1] = np.nan
+        pix_lons[pix_lons > bbox_wesn[1] + 1] = np.nan
+        pix_lons[pix_lons < bbox_wesn[0] - 1] = np.nan
         
         for lat_row, lon_row, val_row in zip(pix_lats, pix_lons, sel_band[:]):
             for lat, lon, val in zip(lat_row, lon_row, val_row):
@@ -264,8 +258,8 @@ def plot_single_band_goes(file_path: str,
                                 (lon, lat),
                                 xytext=(X_PIX_VAL_OFFSET,Y_PIX_VAL_OFFSET),
                                 textcoords='offset points',
-                                horizontalalignment='center',
-                                verticalalignment='center', 
+                                horizontalalignment='right',
+                                verticalalignment='top', 
                                 color='black',
                                 clip_box=ax.bbox,
                                 fontsize=6,
@@ -274,13 +268,12 @@ def plot_single_band_goes(file_path: str,
                                 zorder=30)
 
     if kwargs.get('colorbar_visible'):
-        cb = cbfig.colorbar(img,
-                            ax=ax,
-                            cax=cbax,
-                            orientation = "horizontal", 
-                            pad=.05,
-                            shrink=0.7,
-                            use_gridspec=False)
+        cb = cbfig.colorbar(ax=ax,
+                       cax=cbax,
+                       orientation = "horizontal", 
+                       pad=.05,
+                       shrink=0.7,
+                       use_gridspec=False)
         cb.set_label(cbar_label, size='x-large', **cbar_opts)
 
     #POINT DRAWING

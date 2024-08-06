@@ -44,10 +44,10 @@ Used to set the style of any user input points shown on the map.
 POINT_STYLE is used for the point(s), and POINT_LABEL_STYLE is used for any
 point label(s) given. No labels are shown if POINT_LABEL_VISIBLE is False.
 '''
-POINT_STYLE = {'color': 'white', 'markersize': 18, 'markeredgecolor': 'red'}
+POINT_STYLE = {'color': 'black', 'markersize': 8,}
 POINT_LABEL_VISIBLE = True
 DRAW_LABEL_ARROWS = True
-POINT_LABEL_STYLE = {'color': 'black', 'fontsize': 14, 'fontweight': 'bold'}
+POINT_LABEL_STYLE = {'color': 'red', 'fontsize': 14, 'fontweight': 'bold'}
 
 ## Set the positioning of the labels relative to the points being plotted
 ## (Default: X=0.2, Y=0.1)
@@ -679,7 +679,7 @@ def draw_wind_display(fig: mpl.figure.Figure,
                       prodabbr: str,
                       **kwargs) -> tuple[str, str]:
 
-    slicer_idx = kwargs.pop('wind_display_indexing', 2)
+    slicer_idx = kwargs.pop('wind_display_indexing', 4)
 
     if model == 'hrrr':
         vtable = HRRR_VARIABLE_TABLE
@@ -870,7 +870,7 @@ if __name__ == "__main__":
     print(save_dir)
 
     if args.levels_range:
-        plot_levels = range(levels_range[0], levels_range[1]+25, 25)
+        plot_levels = range(args.levels_range[1], args.levels_range[0]+25, 25)
     else:
         plot_levels = DEFAULT_LEVELS_TO_PLOT
     num_levels = len(plot_levels)

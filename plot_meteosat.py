@@ -1,6 +1,6 @@
 ## Set to True if you want more towns plotted on the map
 ## (Default: False)
-TOWN_SCALE_RANK = 5
+TOWN_SCALE_RANK = 14
 
 ## Set the DPI of the saved output file
 FILE_DPI = 300
@@ -16,7 +16,7 @@ Used to set the style of any user input points shown on the map.
 POINT_STYLE is used for the point(s), and POINT_LABEL_STYLE is used for any
 point label(s) given. No labels are shown if POINT_LABEL_VISIBLE is False.
 '''
-POINT_STYLE = {'color': 'black', 'markersize': 6}
+POINT_STYLE = {'color': 'black', 'markersize': 8}
 POINT_LABEL_VISIBLE = True
 POINT_LABEL_STYLE = {'color': 'black', 'fontsize': 12}
 DRAW_LABEL_ARROWS = True
@@ -24,14 +24,14 @@ DRAW_LABEL_ARROWS = True
 
 ## Set the positioning of the labels relative to the points being plotted
 ## (Default: X=0.2, Y=0.1)
-Y_LABEL_OFFSET = -0.1
-X_LABEL_OFFSET = 1
+Y_LABEL_OFFSET = 0.0
+X_LABEL_OFFSET = 0.35
 
 ## Set the positioning of the pixel values relative to the upper-left corner
 ## of the pixel.
 ## (Default: X=5, Y=10)
-X_PIX_VAL_OFFSET = -8
-Y_PIX_VAL_OFFSET = -7
+X_PIX_VAL_OFFSET = 0
+Y_PIX_VAL_OFFSET = 0
 
 
 
@@ -44,10 +44,6 @@ Y_PIX_VAL_OFFSET = -7
 
 
 # 6/13/24 - Added cmasher (cmr) import for cmasher colormap support
-
-#TODO:
-#Add in ability to position points in CSV
-#Add in ability to use settings file (see plot_plan_view.py)
 
 
 
@@ -81,10 +77,11 @@ from cartopy.feature import NaturalEarthFeature
 from tqdm.auto import tqdm
 from adjustText import adjust_text
 import cmasher as cmr
+import satpy
 
 from __internal_funcs import (plot_towns, draw_logo, plot_points,
-                              define_hi_res_fig,
-                              define_gearth_compat_fig, save_figs_to_kml)
+                              define_gearth_compat_fig, save_figs_to_kml,
+                              define_hi_res_fig)
 
 matplotlib.use('agg')
 np.seterr(divide = 'ignore', invalid='ignore')
@@ -109,32 +106,43 @@ IMPLEMENTED_COMPOSITES = {
     'true_color' : 'True Color'
 }
 
-IMPLEMENTED_BANDS = {
-    '1': 'Blue (0.47 µm, 1 km)',
-    '2': 'Red (0.64 µm, 0.5 km)',
-    '3': 'Veggie (0.86 µm, 1 km)',
-    '4': 'Cirrus (1.37 µm, 2 km)',
-    '5': 'Snow/Ice (1.6 µm, 1 km)',
-    '6': 'Cloud Particle Size (2.2 µm, 2 km)',
-    '7': 'Shortwave IR (3.9 µm, 2 km)',
-    '8': 'High-level Water Vapor (6.2 µm, 2 km)',
-    '9': 'Mid-level Water Vapor (6.9 µm, 2 km)',
-    '10': 'Low-level Water Vapor (7.3 µm, 2 km)',
-    '11': 'Cloud-Top Phase (8.4 µm, 2 km)',
-    '12': 'Ozone (9.6 µm, 2 km)',
-    '13': '"Clean" Longwave IR (10.3 µm, 2 km)',
-    '14': 'Longwave IR (11.2 µm, 2 km)',
-    '15': '"Dirty" Longwave IR (12.3 µm, 2 km)',
-    '16': '"CO2" Longwave IR" (13.3 µm, 2 km)',
+IMPLEMENTED_BAND_NAMES = {
+    '1': 'Visible (Red) (0.6 µm, 3 km)',
+    '2': 'Visible (Green) (0.8 µm, 3 km)',
+    '3': 'Near-Infrared (Blue) (1.6 µm, 3 km)',
+    '4': 'Infrared (3.9 µm, 3 km)',
+    '5': 'High-Level Water Vapor (6.2 µm, 3 km)',
+    '6': 'Mid-Level Water Vapor (7.3 µm, 3 km)',
+    '7': 'Infrared (8.7 µm, 3 km)',
+    '8': 'Infrared (9.7 µm, 3 km)',
+    '9': 'Infrared (10.8 µm, 3 km)',
+    '10': 'Infrared (12.0 µm, 3 km)',
+    '11': 'Infrared (13.4 µm, 3 km)',
+    '12': 'High-Resolution Visible (0.3 - 1 µm, 1 km)',
 }
 
-def plot_single_band_goes(file_path: str, 
-                          save_dir: str, 
-                          band: int, 
-                          points: list[tuple[float, float, str], ...],
-                          bbox: list[float, float, float, float] = DEFAULT_BBOX, 
-                          pallete: str = DEFAULT_SB_PALLETE, 
-                          **kwargs):
+IMPLEMENTED_BAND_IDS = {
+    '1': 'VIS006',
+    '2': 'VIS008',
+    '3': 'IR_016',
+    '4': 'IR_039',
+    '5': 'WV_062',
+    '6': 'WV_073',
+    '7': 'IR_087',
+    '8': 'IR_097',
+    '9': 'IR_108',
+    '10': 'IR_120',
+    '11': 'IR_134',
+    '12': 'HRV',
+}
+
+def plot_single_band_meteosat(file_path: str, 
+                              save_dir: str, 
+                              band: int, 
+                              points: list[tuple[float, float, str], ...],
+                              bbox: list[float, float, float, float] = DEFAULT_BBOX, 
+                              pallete: str = DEFAULT_SB_PALLETE, 
+                              **kwargs):
     """
     Using a bounding box, plots a single satellite band and any points.
 
@@ -155,41 +163,60 @@ def plot_single_band_goes(file_path: str,
     """
 
     try:
-        data = xr.open_dataset(file_path, engine="netcdf4")
+        data = satpy.Scene(reader="seviri_l1b_native",
+                           filenames=[file_path],
+                           reader_kwargs={'fill_disk': True})
     except Exception as e:
         raise e
 
-    scan_start = datetime.strptime(data.time_coverage_start, '%Y-%m-%dT%H:%M:%S.%fZ')
-    scan_end = datetime.strptime(data.time_coverage_end, '%Y-%m-%dT%H:%M:%S.%fZ')
-    file_created = datetime.strptime(data.date_created, '%Y-%m-%dT%H:%M:%S.%fZ')
-    orbital_slot = data.orbital_slot #GOES-East, GOES-West, GOES-Test, etc.
-    sat_id = data.platform_ID #G18, G17, G16, etc.
+    sel_band_name = IMPLEMENTED_BAND_NAMES[str(band)]
+    sel_band_id = IMPLEMENTED_BAND_IDS[str(band)]
 
-    proj_info = data.variables['goes_imager_projection']
-    # print(data.variables)
-    # radiance = data.variables['Rad'][:]
+    data.load([sel_band_id])
+    data = data.crop(ll_bbox=(bbox[3], bbox[1], bbox[2], bbox[0]))
+    data = data.resample(data[sel_band_id].attrs['area'], resampler='native')
 
-    # fk1 = data.variables['planck_fk1'][:]
-    # fk2 = data.variables['planck_fk2'][:]
-    # bc1 = data.variables['planck_bc1'][:]
-    # bc2 = data.variables['planck_bc2'][:]
     
-    #BAND SELECTION
+    sel_band = data[sel_band_id]
 
-    sel_band_str = 'CMI_C' + str(band).zfill(2)
-    sel_band = data[sel_band_str].data
-    sel_band_name = data['band_id_C' + str(band).zfill(2)].long_name
+    scan_start = sel_band.time_parameters['observation_start_time']
+    scan_end = sel_band.time_parameters['observation_end_time']
+    sat_sensor = sel_band.attrs['sensor']
+    sat_name = sel_band.attrs['platform_name']
+    sat_id = sat_name.replace("Meteosat-", "MSG")
 
-    x = data.x
-    y = data.y
     
-    pix_lats, pix_lons = _calculate_pixel_lat_lon(x, y, proj_info)
+    geog_data = sel_band.attrs["area"].to_cartopy_crs()
 
-    data = data.metpy.parse_cf('CMI_C02')
-    geog_data = data.metpy.cartopy_crs
-    x = data.x
-    y = data.y
+    x = sel_band.x
+    y = sel_band.y
 
+    img_data = sel_band.values
+
+    img_extent = sel_band.attrs["area"].area_extent
+
+    proj_info = {}
+    for entry in sel_band.attrs['area'].proj4_string.split(" +"):
+        items = entry.replace('+','').split('=')
+        proj_info.update({items[0]: items[1] if len(items) > 1 else None})
+
+    # pix_lats, pix_lons, pix_vals = _calculate_pixel_lat_lon(x.values, y.values, sel_band, sel_band.attrs["area"])
+
+    pix_lats, pix_lons = sel_band.attrs["area"].get_lonlats()
+
+    # x_range = range(0, len(proj_x))
+    # y_range = range(0, len(proj_y))
+    # x_idx, y_idx = np.meshgrid(x_range, y_range)
+
+    # for x, y in zip(x_idx, y_idx):
+    #     lon, lat = proj_area_def.get_lonlat_from_array_coordinates(x, y)
+    #     lats += [lat]
+    #     lons += [lon]
+
+    #     x, y = proj_area_def.lonlat2colrow(lon, lat)
+    #     val = proj_data.values[y, x]
+    #     vals += [val]
+    
     #x, y = np.meshgrid(x, y)
 
     #DATA CORRECTIONS
@@ -200,8 +227,8 @@ def plot_single_band_goes(file_path: str,
         correct_clip = False
         correct_gamma = False
 
-        img_vmin = 180
-        img_vmax = 330
+        img_vmin = 210
+        img_vmax = 230
 
         cbar_label = "Radiance Temperature (K)"
 
@@ -213,12 +240,6 @@ def plot_single_band_goes(file_path: str,
         img_vmax = 1
 
         cbar_label = "Apparent Brightness"
-
-    if correct_clip:
-        sel_band = np.clip(sel_band, 0, 1)
-
-    if correct_gamma:
-        sel_band = np.power(sel_band, 1/DEF_GAMMA)
 
     if kwargs.get('save_to_kmz'):  
         fig, ax, cbfig, cbax = define_gearth_compat_fig((bbox[2], bbox[3]),
@@ -234,53 +255,66 @@ def plot_single_band_goes(file_path: str,
         cbax = None
 
         cbar_opts = {}
-    
-    img = ax.imshow(sel_band, 
-                    origin='upper',
-                    extent=(x.min(), x.max(), y.min(), y.max()),
-                    transform=geog_data,
-                    interpolation='none',
-                    vmin = img_vmin,
-                    vmax = img_vmax,
-                    cmap = pallete)
+
 
     
-    # ir = [fk2 / (np.log((fk1/radiance) + 1)) - bc1] / bc2
-    
-    # ir = ir[0,:,:]
+    img = ax.imshow(img_data, 
+              origin='upper',
+              extent=(img_extent[0], img_extent[2], img_extent[1], img_extent[3]),#(x.min().values, x.max().values, y.min().values, y.max().values),
+              transform=geog_data,
+              interpolation='none',
+              # vmin = 180,
+              # vmax = 330,
+              cmap = pallete)
 
+    
     if kwargs.get('pixel_value'):
 
-        pix_lats[pix_lats > bbox[0] + 1] = np.nan
-        pix_lats[pix_lats < bbox[1] - 1] = np.nan
+        for lat, lon, val in zip(pix_lats.flatten(), pix_lons.flatten(), img_data.flatten()):
+            ax.annotate(str(round(val, 1)),
+                        (lat, lon),
+                        xytext=(X_PIX_VAL_OFFSET,
+                                Y_PIX_VAL_OFFSET),
+                        textcoords='offset points',
+                        horizontalalignment='center',
+                        verticalalignment='center', 
+                        color='black',
+                        clip_box=ax.bbox,
+                        fontsize=6,
+                        transform=geog_data._as_mpl_transform(ax),
+                        annotation_clip=False, 
+                        zorder=30)
 
-        pix_lons[pix_lons > bbox[2] + 1] = np.nan
-        pix_lons[pix_lons < bbox[3] - 1] = np.nan
-        
-        for lat_row, lon_row, val_row in zip(pix_lats, pix_lons, sel_band[:]):
-            for lat, lon, val in zip(lat_row, lon_row, val_row):
-                if not (np.isnan(lat) or np.isnan(lon)):
-                    ax.annotate(str(round(val, 1)), 
-                                (lon, lat),
-                                xytext=(X_PIX_VAL_OFFSET,Y_PIX_VAL_OFFSET),
-                                textcoords='offset points',
-                                horizontalalignment='center',
-                                verticalalignment='center', 
-                                color='black',
-                                clip_box=ax.bbox,
-                                fontsize=6,
-                                transform=crs.PlateCarree(),
-                                annotation_clip=False, 
-                                zorder=30)
+        # for lat_row, lon_row, val_row in zip(pix_lats, pix_lons, reversed(img_data)):
+        #     for lat, lon, val in zip(lat_row, lon_row, reversed(val_row)):
+        #         if not (np.isnan(lat) or np.isnan(lon)):
+
+        #             #To compensate for projection, add an adjustment factor to the pixel values.
+        #             #The adjustment factor starts large, in the upper left corner, and decreases
+        #             #toward the right and the bottom.
+
+        #             ax.annotate(str(round(val, 1)), 
+        #                         (lon, lat),
+        #                         xytext=(X_PIX_VAL_OFFSET,
+        #                                 Y_PIX_VAL_OFFSET),
+        #                         textcoords='offset points',
+        #                         horizontalalignment='center',
+        #                         verticalalignment='center', 
+        #                         color='black',
+        #                         clip_box=ax.bbox,
+        #                         fontsize=6,
+        #                         transform=crs.Geostationary()._as_mpl_transform(ax),
+        #                         annotation_clip=False, 
+        #                         zorder=30)
 
     if kwargs.get('colorbar_visible'):
         cb = cbfig.colorbar(img,
-                            ax=ax,
-                            cax=cbax,
-                            orientation = "horizontal", 
-                            pad=.05,
-                            shrink=0.7,
-                            use_gridspec=False)
+                        ax=ax,
+                       cax=cbax,
+                       orientation = "horizontal", 
+                       pad=.05,
+                       shrink=0.7,
+                       use_gridspec=False)
         cb.set_label(cbar_label, size='x-large', **cbar_opts)
 
     #POINT DRAWING
@@ -295,11 +329,12 @@ def plot_single_band_goes(file_path: str,
                     point_style=POINT_STYLE,
                     point_label_style=POINT_LABEL_STYLE)
 
+    
     if kwargs.get('save_to_kmz'):
-
-        file_name = sat_id + "_" + sel_band_str + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
-        layer_name = sat_id.replace("G", "GOES-") + " image at " + scan_end.strftime('%d %B %Y %H:%M UTC ')
-        layer_desc = IMPLEMENTED_BANDS[str(band)]
+        
+        file_name = sat_id + "_" + sel_band_id + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
+        layer_name = f"{sat_name} {sat_sensor.upper()} image at " + scan_end.strftime('%d %B %Y %H:%M UTC')
+        layer_desc = sel_band_name
 
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
@@ -319,20 +354,19 @@ def plot_single_band_goes(file_path: str,
             plt.close(cbfig)
 
     else:
-    
         plot_towns(ax, 
                   (bbox[2], bbox[3]),
                   (bbox[0], bbox[1]), 
                   scale_rank=TOWN_SCALE_RANK)
         draw_logo(ax)
 
-        title_info = orbital_slot.replace("-Test", "") + " (" + sat_id.replace("G", "GOES-") + ")\n" + IMPLEMENTED_BANDS[str(band)]
+        title_info = f"{sat_name} {sat_sensor.upper()} imagery\n{sel_band_name}"
         
         ax.set_title(title_info, loc='left', fontweight='bold', fontsize=15)
         ax.set_title('{}'.format(scan_end.strftime('%d %B %Y %H:%M UTC ')), loc='right')
         
-        file_name = sat_id + "_" + sel_band_str + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
-        
+        file_name = sat_id + "_" + sel_band_id + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
+                
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
@@ -341,12 +375,12 @@ def plot_single_band_goes(file_path: str,
         fig.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
         plt.close(fig)
 
-def plot_composite_goes(file_path: str, 
-                        save_dir: str,
-                        points: list[tuple[float, float, str], ...], 
-                        bbox: list[float, float, float, float] = DEFAULT_BBOX, 
-                        product: str = DEFAULT_COMPOSITE_PRODUCT,  
-                        **kwargs):
+def plot_composite_meteosat(file_path: str, 
+                            save_dir: str,
+                            points: list[tuple[float, float, str], ...], 
+                            bbox: list[float, float, float, float] = DEFAULT_BBOX, 
+                            product: str = DEFAULT_COMPOSITE_PRODUCT,  
+                            **kwargs):
     """
     Using a bounding box, plots a single satellite band and any points.
 
@@ -487,39 +521,38 @@ def plot_composite_goes(file_path: str,
 
         plt.close(fig)
 
-def _calculate_pixel_lat_lon(proj_x, proj_y, proj_info):
+# def _calculate_pixel_lat_lon(proj_x, proj_y, proj_data, proj_area_def):
 
-    #print(proj_info)
-    proj_x, proj_y = np.meshgrid(proj_x, proj_y)
+#     lons, lats = proj_area_def.get_lonlat_from_projection_coordinates(proj_x, proj_y)
 
-    #Thanks to Mikhail Krotkin
 
-    r_eq = 6378137 #Equitorial radius in m
-    r_pol = 6356752.31414 #Polar radius in m
-    
-    ### Longitude of Origin ###
-    lon_projection = proj_info.attrs['longitude_of_projection_origin']
-    l_0 = lon_projection * (np.pi/180) #Longitude in Radians
-    
-    H = proj_info.attrs['perspective_point_height']+proj_info.attrs['semi_major_axis']
-    
-    ### Formula to Determine Lat/Longs from Satellite proj_x/proj_y coordinates that are given in Radians ###
-    a = np.sin(proj_x)**2 + (np.cos(proj_x)**2 * (np.cos(proj_y)**2 + (r_eq**2 / r_pol**2) * np.sin(proj_y)**2))
-    b = -2 * H * np.cos(proj_x) * np.cos(proj_y)
-    c = (H**2) - (r_eq**2)
-    
-    r_s = (-b - np.sqrt(b**2 - 4*a*c))/(2*a)
-    
-    s_x = r_s * np.cos(proj_x) * np.cos(proj_y)
-    s_y = -r_s * np.sin(proj_x)
-    s_z = r_s * np.cos(proj_x) * np.sin(proj_y)
-    
-    lats = np.arctan((r_eq**2 / r_pol**2) * (s_z / np.sqrt((H-s_x)**2 +s_y**2))) * (180/np.pi)
-    lons = (l_0 - np.arctan(s_y / (H-s_x))) * (180/np.pi)
+#     for lon, lat in zip(lons, lats):
+#         x, y = proj_area_def.lonlat2colrow(lon, lat)
+#         val = proj_data.values[y, x]
+#         vals += [val]
 
-    #print('{} N, {} W'.format(lats[318,1849],abs(lons[318,1849])))
+#     return lats, lons, vals
 
-    return lats, lons
+def _calculate_pixel_lat_lon(proj_x, proj_y, proj_data, proj_area_def):
+
+    lats = []
+    lons = []
+    vals = []
+
+    x_range = range(0, len(proj_x))
+    y_range = range(0, len(proj_y))
+    x_idx, y_idx = np.meshgrid(x_range, y_range)
+
+    for x, y in zip(x_idx, y_idx):
+        lon, lat = proj_area_def.get_lonlat_from_array_coordinates(x, y)
+        lats += [lat]
+        lons += [lon]
+
+        x, y = proj_area_def.lonlat2colrow(lon, lat)
+        val = proj_data.values[y, x]
+        vals += [val]
+
+    return lats, lons, vals
 
 def _calculate_composite_product_data(data, product_name):
 
@@ -800,7 +833,7 @@ if __name__ == "__main__":
         product_desc = f"'{IMPLEMENTED_COMPOSITES[args.composite]}' composite"
     elif args.band:
         plot_composite = False
-        product_desc = f"band {args.band} ({IMPLEMENTED_BANDS[str(args.band)]})"
+        product_desc = f"band {args.band} ({IMPLEMENTED_BAND_NAMES[str(args.band)]})"
     else:
         raise ValueError("A band or composite product to plot must be specified.")
 
@@ -837,7 +870,7 @@ if __name__ == "__main__":
         kwargs.update({'colorbar_visible': True})
 
 
-    input_files = sorted(glob.glob(f'{input_dir}*.nc'))
+    input_files = sorted(glob.glob(f'{input_dir}*.nat'))
     num_input_files = len(input_files)
 
     tot_files = 0
@@ -853,13 +886,13 @@ if __name__ == "__main__":
                                     args.composite, 
                                     **kwargs)
             else:
-                plot_single_band_goes(input_file_path, 
-                                      save_dir, 
-                                      args.band, 
-                                      points, 
-                                      bbox, 
-                                      pal, 
-                                      **kwargs)
+                plot_single_band_meteosat(input_file_path, 
+                                          save_dir, 
+                                          args.band, 
+                                          points, 
+                                          bbox, 
+                                          pal, 
+                                          **kwargs)
             progress.update()
 
     print("Done!")

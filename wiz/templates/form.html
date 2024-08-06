@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+    <html lang="en-US">
+    <head>
+      <meta charset="utf-8">
+      <title>Python form submission example</title>
+      <style>
+        form {
+          width: 420px;
+        }
+
+        div {
+          margin-bottom: 20px;
+        }
+
+        label {
+          display: inline-block;
+          width: 240px;
+          text-align: right;
+          padding-right: 10px;
+        }
+
+        button, input {
+          float: right;
+        }
+      </style>
+      <script>
+
+        window.onload = init;
+
+        function init(){
+          document.getElementById("addCommandButton").addEventListener("click", function(event){
+            event.preventDefault();
+            addCommand();
+          }); 
+        }
+
+
+        function addCommand(){
+
+          var obj = document.getElementById("command-picker");
+          var cmd_id = obj.options[obj.selectedIndex].value;
+          var cmd_name = obj.options[obj.selectedIndex].innerHTML;
+          console.log(cmd_id);
+
+          var client = new XMLHttpRequest();
+          client.open('GET', `/${cmd_id}.html`);
+          client.onload = function() {
+            document.getElementById("cmd-context-container").innerHTML += client.responseText;
+          }
+          client.send();
+        }
+
+        function populateCommandObj(){
+          var obj = document.getElementById("command-picker");
+          var cmd_id = obj.options[obj.selectedIndex].text;
+          var cmd_name = obj.options[obj.selectedIndex].innerHTML;
+
+          document.getElementById("cmd-context-container").innerHTML += `<p id=${cmd_id}><label for="enb">${cmd_name} Enabled?<input type="checkbox" id="enb" name="enb" value="Enable"></p>`;
+        }
+      </script>
+    </head>
+    <body>
+      <div>
+          <label for="command">Choose a command:</label>
+          <select id="command-picker" name="command-picker">
+            <option value="download_aws">Download from AWS</option>
+            <option value="download_eumetsat_from_cart">Download EUMETSAT (req. cart files)</option>
+            <option value="plot_goes">Plot GOES data</option>
+            <option value="plot_glm">Plot GLM data</option>
+            <option value="plot_meteosat">Plot Meteosat data</option>
+            <option value="plot_himawari">Plot Himawari data</option>
+            <option value="plot_radar">Plot NEXRAD or MRMS data</option>
+            <option value="plot_plan_view">Plot model data in plan view</option>
+            <option value="plot_cross_section">Plot model data in cross-section view</option>
+            <option value="create_meteogram_data">Create a meteogram CSV from model data</option>
+            <option value="create_raob_sounding">Create a RAOB sounding from model data</option>
+            <input type="button" id="addCommandButton" value="Add Command">
+          <div id="cmd-context-container"></div>
+          <div>
+            <button type='submit' onclick="postCommands()">Generate File</button>
+          </div>
+        </form>
+      </div>
+    </body>
+  </html>

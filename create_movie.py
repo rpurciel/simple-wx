@@ -9,16 +9,26 @@ import cv2
 
 DEFAULT_FPS = 10
 
+VALID_FILE_EXTS = ['.png', '.PNG', '.jpg', '.jpeg', '.JPG', '.JPEG']
+
 def create_movie_from_files(path_to_files, save_path, frames_per_second):
     """
     Create a movie from the desired list of images at each pressure level
     """
     # Each video has a frame per second which is number of frames in every second
     # Make list of files and sort
-    files = sorted(glob.glob(path_to_files + "*.png"))
+    files = []
 
-    if not files:
-        files = sorted(glob.glob(path_to_files + "*.jpg"))
+    for ext in VALID_FILE_EXTS:
+        print(f"Searching for files with extention {ext}")
+        files = sorted(glob.glob(path_to_files + "*" + ext))
+        if files:
+            break
+
+    if files:
+        print("Files found.")
+    else:
+        raise ValueError(f"No files found for extensions {VALID_FILE_EXTS}")
 
     
     

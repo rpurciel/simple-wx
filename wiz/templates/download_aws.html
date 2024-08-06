@@ -1,0 +1,28 @@
+<script id="download_aws_script" type="text/javascript">
+  function test(){
+    console.log("hello")
+  }
+</script>
+<body>
+<p>
+  <h1>Download from AWS</h1>
+  <h2><i>download_aws.py</i></h2>
+  <div>
+    <label for="data-source">Data Type:</label>
+    <select id="data-source" name="data-source" onchange="test()">
+      <option value="s_goes16">GOES-16 Multiband (MCMIPC)</option>
+      <option value="s_goes17">GOES-17 Multiband (MCMIPC)</option>
+      <option value="s_goes18">GOES-18 Multiband (MCMIPC)</option>
+      <option value="s_hw8">Himawari-8 Multiband</option>
+      <option value="s_hw9">Himawari-9 Multiband</option>
+      <option value="s_goes16-glm">GOES-16 GLM</option>
+      <option value="s_goes17-glm">GOES-17 GLM</option>
+      <option value="s_goes18-glm">GOES-18 GLM</option>
+      <option value="m_hrrr-anl">HRRR Model Analysis Data</option>
+      <option value="m_gfs-anl">GFS Model Analysis Data</option>
+      <option value="r_mrms">Multi-radar Multi-sensor</option>
+      <option value="r_rad">Single Radar Data</option>
+    </select>
+  </div>
+</p>
+</body>

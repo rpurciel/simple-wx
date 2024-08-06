@@ -19,8 +19,8 @@ import cartopy.io.shapereader as shpreader
 from cartopy.feature import NaturalEarthFeature
 from adjustText import adjust_text 
 
-DEFAULT_POINT_STYLE = {'color': 'black', 'markersize': 4}
-DEFAULT_POINT_LABEL_STYLE = {'color': 'black', 'fontsize': 10}
+DEFAULT_POINT_STYLE = {'color': 'black', 'markersize': 8}
+DEFAULT_POINT_LABEL_STYLE = {'color': 'black', 'fontsize': 14}
 
 def make_highly_visible(plt: mpl.figure.Figure,
                         obj: mpl.artist.Artist,
@@ -88,11 +88,14 @@ def plot_points(plt: mpl.figure.Figure,
                                        xytext=(y_axis+x_label_offset, x_axis+y_label_offset), 
                                        horizontalalignment='right', 
                                        verticalalignment='top',
+                                       fontsize=12,
+                                       color='black',
                                        arrowprops=dict(arrowstyle='->', 
                                                        color=point_label_style['color']), 
                                        transform=transform,
                                        annotation_clip=True, 
                                        zorder=zorder)
+                # make_highly_visible(plt, pt_label)
             else:
                 pt_label = ax.annotate(label, 
                                        xy=(y_axis, x_axis),
@@ -102,10 +105,12 @@ def plot_points(plt: mpl.figure.Figure,
                                        transform=transform,
                                        annotation_clip=True, 
                                        zorder=zorder)
+                # make_highly_visible(plt, pt_label)
             input_pt_labels = [pt_label]
 
-    plt.setp(input_pts, **point_style)
-    plt.setp(input_pt_labels, **point_label_style)
+
+    mpl.artist.setp(input_pts, **point_style)
+    mpl.artist.setp(input_pt_labels, **point_label_style)
     adjust_text(input_pt_labels)
 
     return (input_pts, input_pt_labels)
@@ -324,7 +329,7 @@ def define_gearth_compat_fig(lon_bounds: tuple[float, float],
                      frameon=False,
                      dpi=dpi_pixels // 10)
 
-    ax = fig.add_axes([0, 0, 1, 1], projection=ccrs.PlateCarree())
+    ax = fig.add_axes([0, 0, 1, 1], projection=projection)
     ax.set_xlim(min(lon_bounds), max(lon_bounds))
     ax.set_ylim(min(lat_bounds), max(lat_bounds))
 
@@ -341,7 +346,7 @@ def define_gearth_compat_fig(lon_bounds: tuple[float, float],
         ax.set_xlabel('Latitude')
         ax.set_ylabel('Longitude')
 
-        gl = ax.gridlines(crs=ccrs.PlateCarree(), 
+        gl = ax.gridlines(crs=projection, 
                           linewidth=1, 
                           color='black', 
                           alpha=0.5, 
@@ -433,10 +438,10 @@ def save_figs_to_kml(save_path: str,
         ground.gxaltitudemode = kwargs.pop('gxaltitudemode', 'clampToSeaFloor')
         ground.opacity = kwargs.pop('opacity', 1)
         ground.icon.href = fig
-        ground.latlonbox.east = min(lon_bounds)
+        ground.latlonbox.east = max(lon_bounds)
         ground.latlonbox.south = min(lat_bounds)
         ground.latlonbox.north = max(lat_bounds)
-        ground.latlonbox.west = max(lon_bounds)
+        ground.latlonbox.west = min(lon_bounds)
 
     if colorbar_fig:  # Options for colorbar are hard-coded (to avoid a big mess).
         screen = kml.newscreenoverlay(name='Legend')
