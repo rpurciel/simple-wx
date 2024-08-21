@@ -16,16 +16,16 @@ Used to set the style of any user input points shown on the map.
 POINT_STYLE is used for the point(s), and POINT_LABEL_STYLE is used for any
 point label(s) given. No labels are shown if POINT_LABEL_VISIBLE is False.
 '''
-POINT_STYLE = {'color': 'black', 'markersize': 6}
+POINT_STYLE = {'color': 'red', 'markersize': 6}
 POINT_LABEL_VISIBLE = True
-POINT_LABEL_STYLE = {'color': 'black', 'fontsize': 12}
+POINT_LABEL_STYLE = {'color': 'red', 'fontsize': 12}
 DRAW_LABEL_ARROWS = True
 
 
 ## Set the positioning of the labels relative to the points being plotted
 ## (Default: X=0.2, Y=0.1)
 Y_LABEL_OFFSET = -0.1
-X_LABEL_OFFSET = 1
+X_LABEL_OFFSET = 0.1
 
 ## Set the positioning of the pixel values relative to the upper-left corner
 ## of the pixel.
@@ -103,10 +103,13 @@ COLORBAR_LABEL = 'Radiance Temperature (K)'
 
 IMPLEMENTED_COMPOSITES = {
     'dust_rgb' : 'Dust RGB',
-    'nt_microphysics' : 'Nighttime Microphysics',
+    'nighttime_microphysics' : 'Nighttime Microphysics',
     'day_land_cloud_fire' : 'Day Land Cloud Fire',
+    'day_land_cloud' : 'Day Land Cloud',
     'day_cloud_phase' : 'Day Cloud Phase',
-    'true_color' : 'True Color'
+    'day_snow_fog' : 'Day Snow/Fog',
+    'true_color' : 'True Color',
+
 }
 
 IMPLEMENTED_BANDS = {
@@ -541,6 +544,53 @@ def _calculate_composite_product_data(data, product_name):
 
         human_product_name = "Day Land Cloud/Fire"
 
+    if product_name == 'day_land_cloud':
+
+        red = data['CMI_C05'].data #1.6 micron
+        green = data['CMI_C03'].data #0.86 micron
+        blue = data['CMI_C02'].data #0.64 micron
+
+        red_bounds = (0.0, 0.975) #in albedo (%)
+        green_bounds = (0.0, 1.086) #in albedo (%)
+        blue_bounds = (0.0, 1.0) #in albedo (%)
+
+        red = ((red - red_bounds[0]) / (red_bounds[1] - red_bounds[0]))
+        green = ((green - green_bounds[0]) / (green_bounds[1] - green_bounds[0]))
+        blue = ((blue - blue_bounds[0]) / (blue_bounds[1] - blue_bounds[0]))
+
+        pallete = None
+
+        human_product_name = "Day Land Cloud/Fire"
+
+    if product_name == 'day_snow_fog':
+
+        c13 = data['CMI_C13'].data #10.3 micron
+        c7 = data['CMI_C07'].data #3.9 micron
+        c5 = data['CMI_C05'].data #1.6 micron
+        c3 = data['CMI_C03'].data #0.86 micron
+
+        red = c3
+        green = c5
+        blue = c7 - c13
+
+        # blue = blue - 273.15 #convert from kelvin to celsius
+
+        red_bounds = (0.0, 1.0) #in albedo (%)
+        green_bounds = (0.0, 0.7) #in albedo (%)
+        blue_bounds = (0.0, 30.0) #in degrees C
+
+        red = ((red - red_bounds[0]) / (red_bounds[1] - red_bounds[0]))
+        green = ((green - green_bounds[0]) / (green_bounds[1] - green_bounds[0]))
+        blue = ((blue - blue_bounds[1]) / (blue_bounds[0] - blue_bounds[1]))
+
+        red = np.power(red, 1/1.7)
+        green = np.power(green, 1/1.7)
+        blue = np.power(blue, 1/1.7)
+
+        pallete = None
+
+        human_product_name = "Day Snow/Fog"
+
     if product_name == 'day_cloud_phase':
 
         red = data['CMI_C13'].data
@@ -562,7 +612,7 @@ def _calculate_composite_product_data(data, product_name):
 
         human_product_name = 'Day Cloud Phase'
 
-    if product_name == 'nt_microphysics':
+    if product_name == 'nighttime_microphysics':
 
         c15 = data['CMI_C15'].data #12.4 micron
         c13 = data['CMI_C13'].data #10.4 micron

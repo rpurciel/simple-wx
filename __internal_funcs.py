@@ -19,9 +19,6 @@ import cartopy.io.shapereader as shpreader
 from cartopy.feature import NaturalEarthFeature
 from adjustText import adjust_text 
 
-DEFAULT_POINT_STYLE = {'color': 'black', 'markersize': 8}
-DEFAULT_POINT_LABEL_STYLE = {'color': 'black', 'fontsize': 14}
-
 def make_highly_visible(plt: mpl.figure.Figure,
                         obj: mpl.artist.Artist,
                         outline_width: int = 5,
@@ -57,12 +54,12 @@ def make_highly_visible(plt: mpl.figure.Figure,
 def plot_points(plt: mpl.figure.Figure,
                 ax: mpl.axes.Axes | cartopy.mpl.geoaxes.GeoAxes, 
                 points: list[tuple[float, float, str, str], ...],
+                point_style: dict,
+                point_label_style: dict,
                 draw_labels: bool = True,
                 draw_arrows: bool = True,
                 x_label_offset: float = 0,
                 y_label_offset: float = 0,
-                point_style: dict = DEFAULT_POINT_STYLE,
-                point_label_style: dict = DEFAULT_POINT_LABEL_STYLE,
                 transform: cartopy.crs = ccrs.PlateCarree(), 
                 zorder: int = 30) -> tuple[list, list]:
 
@@ -83,13 +80,16 @@ def plot_points(plt: mpl.figure.Figure,
        
         if (draw_labels) and (label is not None):
             if draw_arrows:
+                if "Summit" in label:
+                    y_label_offset = -0.5
+                    x_label_offset = 0.5
                 pt_label = ax.annotate(label, 
                                        xy=(y_axis, x_axis),
                                        xytext=(y_axis+x_label_offset, x_axis+y_label_offset), 
                                        horizontalalignment='right', 
                                        verticalalignment='top',
                                        fontsize=12,
-                                       color='black',
+                                       color=point_label_style['color'],
                                        arrowprops=dict(arrowstyle='->', 
                                                        color=point_label_style['color']), 
                                        transform=transform,

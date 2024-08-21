@@ -96,7 +96,7 @@ if __name__ == "__main__":
                         default=None)
     parser.add_argument('-m', '--model', 
                         help='download specified model', 
-                        choices=['gfs-anl', 'hrrr-anl'], 
+                        choices=['gfs-anl', 'hrrr-anl', 'hrrrak-anl'], 
                         type=str,
                         default=None)
     parser.add_argument('-r', '--radar',
@@ -241,6 +241,24 @@ if __name__ == "__main__":
                     file_hr = int(file_hrstr[2:4])
 
                     file_fcsthr = int(file_name[file_name.find('wrfprsf')+7:file_name.rfind('.')])
+
+                    if (file_hr == this_ts.hour) and (file_fcsthr == 0):
+                        keys += [file]
+                        file_names += [file[file.rfind('/')+1:].replace("hrrr.",f"hrrr.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}.")]
+            elif product == "hrrrak-anl":
+                protokey = f'hrrr.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}/alaska/*wrfprsf*'
+                files = list_aws_keys(bucket, protokey, glob_match=True)
+                for file in files:
+                    if 'idx' in file:
+                        continue
+
+                    #advanced filtering to get hourly resolution
+                    file_name = file[file.rfind('/')+1:]
+
+                    file_hrstr = file_name[file_name.find('.'):file_name.find('.')+file_name[file_name.find('.')+1:].find(".")+1]
+                    file_hr = int(file_hrstr[2:4])
+
+                    file_fcsthr = int(file_name[file_name.find('wrfprsf')+7:file_name.rfind('.')-3])
 
                     if (file_hr == this_ts.hour) and (file_fcsthr == 0):
                         keys += [file]

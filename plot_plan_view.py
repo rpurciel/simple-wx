@@ -19,15 +19,15 @@ IMPLEMENTED VARIABLES AND DISPLAY TYPES:
     
 '''
 
-## Turn on N-point variable VARIABLE_SMOOTHING. Only applies to shaded/filled contour variables.
+## Turn on N-point variable smoothing. Only applies to shaded/filled contour variables.
 ## (Default: False)
 VARIABLE_SMOOTHING = False
 
-## Amount of points to use for N-point VARIABLE_SMOOTHING. Must be 5 or 9.
+## Amount of points to use for N-point variable smoothing. Must be 5 or 9.
 ## (Default: 9)
 SMOOTHING_POINTS = 9
 
-## Amount of passes to use for N-point VARIABLE_SMOOTHING.
+## Amount of passes to use for N-point variable smoothing.
 ## (Default: 1)
 SMOOTHING_PASSES = 1
 
@@ -47,12 +47,12 @@ point label(s) given. No labels are shown if POINT_LABEL_VISIBLE is False.
 POINT_STYLE = {'color': 'black', 'markersize': 8,}
 POINT_LABEL_VISIBLE = True
 DRAW_LABEL_ARROWS = True
-POINT_LABEL_STYLE = {'color': 'red', 'fontsize': 14, 'fontweight': 'bold'}
+POINT_LABEL_STYLE = {'color': 'black', 'fontsize': 14}
 
 ## Set the positioning of the labels relative to the points being plotted
 ## (Default: X=0.2, Y=0.1)
-Y_LABEL_OFFSET = -0.2
-X_LABEL_OFFSET = 0.2
+Y_LABEL_OFFSET = 0.3
+X_LABEL_OFFSET = 0
 
 
 
@@ -122,6 +122,12 @@ HRRR_VARIABLE_TABLE = {
     'mxgrat' : 'q',
     'pressure': 'isobaricInhPa',
 }
+#     'sfc_temp':
+#     'sfc_dpt':
+#     'sfc_rh':
+#     'sfc_hgt':
+
+# }
 
 ERA5_VARIABLE_TABLE = {
     'temp': 't',
@@ -160,6 +166,284 @@ def plot_plan_view_hrrr(file_path: str,
         sfc_data = xr.open_dataset(file_path, engine="cfgrib", filter_by_keys={'typeOfLevel': 'surface', 'stepType': 'instant'})
         m2_data = xr.open_dataset(file_path, engine="cfgrib", filter_by_keys={'typeOfLevel': 'heightAboveGround', 'level': 2})
         m10_data = xr.open_dataset(file_path, engine="cfgrib", filter_by_keys={'typeOfLevel': 'heightAboveGround', 'level': 10})
+
+    else:
+        col_data = xr.open_dataset(file_path, engine="cfgrib", filter_by_keys={'typeOfLevel': 'isobaricInhPa'})
+        data = col_data.sel(isobaricInhPa=level)
+
+    file_time_str = str(data['time'].values)
+    file_day = file_time_str[:10].replace("-", "_")
+    file_time = file_time_str[11:16].replace(":", "") + "UTC"
+
+    if kwargs.get('save_to_kmz'):  
+        fig, ax, cbfig, cbax = define_gearth_compat_fig((bbox[2], bbox[3]),
+                                                        (bbox[0], bbox[1]))
+
+    else:
+        fig, ax = define_hi_res_fig((bbox[2], bbox[3]),
+                                    (bbox[0], bbox[1]))
+
+        cbfig = None
+        cbax = None
+
+    prodstr = ""
+    filestr = ""
+
+    if sfc_flag:
+        prodstr, filestr = draw_surface_products(fig, ax,
+                                                 products,
+                                                 'hrrr',
+                                                 prodstr,
+                                                 filestr,
+                                                 fig_for_cb=cbfig,
+                                                 ax_for_cb=cbax,
+                                                 sfc_data=sfc_data,
+                                                 m2_data=m2_data,
+                                                 m10_data=m10_data)
+
+    else:
+        prodstr, filestr = draw_contourf_lines(fig, ax,
+                                               data,
+                                               sel_level,
+                                               products,
+                                               'hrrr',
+                                               prodstr,
+                                               filestr,
+                                               fig_for_cb=cbfig,
+                                               ax_for_cb=cbax,
+                                               **kwargs)
+
+        prodstr, filestr = draw_contour_lines(fig, ax,
+                                              data,
+                                              sel_level,
+                                              products,
+                                              'hrrr',
+                                              prodstr,
+                                              filestr,
+                                              **kwargs)
+
+        prodstr, filestr = draw_wind_display(fig, ax,
+                                             data,
+                                             sel_level,
+                                             products,
+                                             'hrrr',
+                                             prodstr,
+                                             filestr,
+                                             **kwargs)
+
+    if points:
+        plot_points(plt, ax,
+                    points,
+                    x_label_offset=X_LABEL_OFFSET,
+                    y_label_offset=Y_LABEL_OFFSET,
+                    draw_labels=POINT_LABEL_VISIBLE,
+                    draw_arrows=DRAW_LABEL_ARROWS,
+                    point_style=POINT_STYLE,
+                    point_label_style=POINT_LABEL_STYLE)
+
+    prod_titles = prodstr.split('#')
+    if len(prod_titles[1:]) > 1:
+        prod_titles[-1] = "and " + prod_titles[-1]
+        if len(prodstr) >= 40:
+            prod_titles[round(len(prod_titles)/2)] = '\n' + prod_titles[round(len(prod_titles)/2)]
+    
+    titlestr = ", ".join(prod_titles)
+    titlestr = titlestr[2:]
+
+    if kwargs.get('save_to_kmz'):
+        file_name = "PlanView_" + str(sel_level) + filestr + "_" + file_day + "_" + file_time +"_HRRR"
+        layer_name = f"HRRR Reanalysis at {np.datetime_as_string(data['valid_time'].values, timezone='UTC')[:-11].replace('T', ' ')} UTC"
+        layer_desc = titlestr.replace('/\n', ' ') + f', at {sel_level} hPa level'
+        
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        dest_path = os.path.join(save_dir, file_name + ".kmz")
+
+        save_figs_to_kml(dest_path,
+                         (bbox[2], bbox[3]),
+                         (bbox[0], bbox[1]),
+                         fig,
+                         [layer_name],
+                         [layer_desc],
+                         colorbar_fig=cbfig)
+
+        plt.close(fig)
+        if cbfig:
+            plt.close(cbfig)
+
+    else:
+        plot_towns(ax, 
+                   (bbox[2], bbox[3]),
+                   (bbox[0], bbox[1]), 
+                   scale_rank=TOWN_SCALE_RANK)
+
+        draw_logo(ax)
+        
+        descstr = f"{str(data['isobaricInhPa'].values)} hPa Level\nValid at {np.datetime_as_string(data['valid_time'].values, timezone='UTC')[:-11].replace('T', ' ')} UTC"
+        ax.set_title(f'HRRR Reanalysis {titlestr}', loc='left', fontweight='bold', fontsize=15)
+        plt.title(descstr, loc='right')
+
+        file_name = "PlanView_" + str(sel_level) + filestr + "_" + file_day + "_" + file_time +"_ERA5"
+        
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        dest_path = os.path.join(save_dir, file_name + ".png")
+
+        fig.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
+        plt.close(fig)
+
+def plot_plan_view_era5(file_path: str,
+                        save_dir: str,
+                        sel_level: int,
+                        products: list[str, ...],
+                        points: list[tuple[float, float, str], ...],
+                        bbox: list[float, float, float, float],
+                        **kwargs) -> None:
+
+    if level == "9999": #Surface flag
+        sfc_flag = True
+    else:
+        sfc_flag = False
+
+    if sfc_flag:
+        sfc_data = xr.open_dataset(file_path, engine="cfgrib", filter_by_keys={'typeOfLevel': 'surface', 'stepType': 'instant'})
+        m2_data = xr.open_dataset(file_path, engine="cfgrib", filter_by_keys={'typeOfLevel': 'heightAboveGround', 'level': 2})
+        m10_data = xr.open_dataset(file_path, engine="cfgrib", filter_by_keys={'typeOfLevel': 'heightAboveGround', 'level': 10})
+
+    else:
+        col_data = xr.open_dataset(file_path, engine="cfgrib")
+        data = col_data.sel(isobaricInhPa=level)
+
+    file_time_str = str(data['time'].values)
+    file_day = file_time_str[:10].replace("-", "_")
+    file_time = file_time_str[11:16].replace(":", "") + "UTC"
+
+    if kwargs.get('save_to_kmz'):  
+        fig, ax, cbfig, cbax = define_gearth_compat_fig((bbox[2], bbox[3]),
+                                                        (bbox[0], bbox[1]))
+
+    else:
+        fig, ax = define_hi_res_fig((bbox[2], bbox[3]),
+                                    (bbox[0], bbox[1]))
+
+        cbfig = None
+        cbax = None
+
+    prodstr = ""
+    filestr = ""
+
+    if sfc_flag:
+        raise NotImplementedError("Not implemented!!!1!")
+    else:
+        prodstr, filestr = draw_contourf_lines(fig, ax,
+                                               data,
+                                               sel_level,
+                                               products,
+                                               'era5',
+                                               prodstr,
+                                               filestr,
+                                               fig_for_cb=cbfig,
+                                               ax_for_cb=cbax,
+                                               **kwargs)
+
+        prodstr, filestr = draw_contour_lines(fig, ax,
+                                              data,
+                                              sel_level,
+                                              products,
+                                              'era5',
+                                              prodstr,
+                                              filestr,
+                                              **kwargs)
+
+        prodstr, filestr = draw_wind_display(fig, ax,
+                                             data,
+                                             sel_level,
+                                             products,
+                                             'era5',
+                                             prodstr,
+                                             filestr,
+                                             **kwargs)
+
+    if points:
+        plot_points(plt, ax,
+                    points,
+                    x_label_offset=X_LABEL_OFFSET,
+                    y_label_offset=Y_LABEL_OFFSET,
+                    draw_labels=POINT_LABEL_VISIBLE,
+                    draw_arrows=DRAW_LABEL_ARROWS,
+                    point_style=POINT_STYLE,
+                    point_label_style=POINT_LABEL_STYLE)
+    
+    prod_titles = prodstr.split('#')
+    if len(prod_titles[1:]) > 1:
+        prod_titles[-1] = "and " + prod_titles[-1]
+        if len(prodstr) >= 40:
+            prod_titles[round(len(prod_titles)/2)] = '\n' + prod_titles[round(len(prod_titles)/2)]
+    
+    titlestr = ", ".join(prod_titles)
+    titlestr = titlestr[2:]
+
+    if kwargs.get('save_to_kmz'):
+        file_name = "PlanView_" + str(sel_level) + filestr + "_" + file_day + "_" + file_time +"_ERA5"
+        layer_name = f"ERA5 Reanalysis at {np.datetime_as_string(data['valid_time'].values, timezone='UTC')[:-11].replace('T', ' ')} UTC"
+        layer_desc = titlestr.replace('/\n', ' ') + f', at {sel_level} hPa level'
+        
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        dest_path = os.path.join(save_dir, file_name + ".kmz")
+
+        save_figs_to_kml(dest_path,
+                         (bbox[2], bbox[3]),
+                         (bbox[0], bbox[1]),
+                         fig,
+                         [layer_name],
+                         [layer_desc],
+                         colorbar_fig=cbfig)
+
+        plt.close(fig)
+        if cbfig:
+            plt.close(cbfig)
+
+    else:
+        plot_towns(ax, 
+               (bbox[2], bbox[3]),
+               (bbox[0], bbox[1]), 
+               scale_rank=TOWN_SCALE_RANK)
+
+        draw_logo(ax)
+    
+        descstr = f"{str(data['isobaricInhPa'].values)} hPa Level\nValid at {np.datetime_as_string(data['valid_time'].values, timezone='UTC')[:-11].replace('T', ' ')} UTC"
+        ax.set_title(f'ERA5 Reanalysis {titlestr}', loc='left', fontweight='bold', fontsize=15)
+        ax.set_title(descstr, loc='right')
+
+        file_name = "PlanView_" + str(sel_level) + filestr + "_" + file_day + "_" + file_time +"_ERA5"
+        
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        dest_path = os.path.join(save_dir, file_name + ".png")
+
+        fig.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
+        plt.close(fig)
+
+def plot_plan_view_wrf(file_path: str,
+                        save_dir: str,
+                        sel_level: int,
+                        products: list[str, ...],
+                        points: list[tuple[float, float, str], ...],
+                        bbox: list[float, float, float, float],
+                        **kwargs) -> None:
+
+    if level == "9999": #Surface flag
+        sfc_flag = True
+    else:
+        sfc_flag = False
+
+    if sfc_flag:
+        raise NotImplementedError("Surface level plotting for WRF not implemented")
 
     else:
         col_data = xr.open_dataset(file_path, engine="cfgrib", filter_by_keys={'typeOfLevel': 'isobaricInhPa'})
@@ -275,137 +559,193 @@ def plot_plan_view_hrrr(file_path: str,
         fig.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
         plt.close(fig)
 
-def plot_plan_view_era5(file_path: str,
-                        save_dir: str,
-                        sel_level: int,
-                        products: list[str, ...],
-                        points: list[tuple[float, float, str], ...],
-                        bbox: list[float, float, float, float],
-                        **kwargs) -> None:
+def draw_surface_products(fig: mpl.figure.Figure,
+                          ax: mpl.axes.Axes,
+                          products: list[str, ...],
+                          model: str,
+                          prodstr: str,
+                          prodabbr: str,
+                          fig_for_cb: mpl.figure.Figure = None,
+                          ax_for_cb: mpl.axes.Axes = None,
+                          **kwargs) -> tuple[str, str]:
 
-    if level == "9999": #Surface flag
-        sfc_flag = True
+    if fig_for_cb and ax_for_cb:
+        cb_fig = fig_for_cb
+        cb_ax = ax_for_cb
+
+        cbar_opts = {'rotation': -90, 'color': 'k', 'labelpad': 20}
     else:
-        sfc_flag = False
+        cb_fig = fig
+        cb_ax = None
 
-    if sfc_flag:
-        sfc_data = xr.open_dataset(file_path, engine="cfgrib", filter_by_keys={'typeOfLevel': 'surface', 'stepType': 'instant'})
-        m2_data = xr.open_dataset(file_path, engine="cfgrib", filter_by_keys={'typeOfLevel': 'heightAboveGround', 'level': 2})
-        m10_data = xr.open_dataset(file_path, engine="cfgrib", filter_by_keys={'typeOfLevel': 'heightAboveGround', 'level': 10})
+        cbar_opts = {}
 
-    else:
-        col_data = xr.open_dataset(file_path, engine="cfgrib")
-        data = col_data.sel(isobaricInhPa=level)
 
-    file_time_str = str(data['time'].values)
-    file_day = file_time_str[:10].replace("-", "_")
-    file_time = file_time_str[11:16].replace(":", "") + "UTC"
+    if model == 'hrrr':
+        vtable = HRRR_VARIABLE_TABLE
 
-    if kwargs.get('save_to_kmz'):  
-        fig, ax, cbfig, cbax = define_gearth_compat_fig((bbox[2], bbox[3]),
-                                                        (bbox[0], bbox[1]))
+        lat = data.variables['latitude'][:]
+        lon = data.variables['longitude'][:]
+    elif model == 'era5':
+        vtable = ERA5_VARIABLE_TABLE
+        lat = data.variables['latitude'][:]
+        lon = data.variables['longitude'][:]
 
-    else:
-        fig, ax = define_hi_res_fig((bbox[2], bbox[3]),
-                                    (bbox[0], bbox[1]))
 
-        cbfig = None
-        cbax = None
+    if "cldcvr_cf" in products:
+        levels = np.arange(kwargs.pop('cldcvr_level_min', 0),
+                           kwargs.pop('cldcvr_level_max', 1.1),
+                           kwargs.pop('cldcvr_level_step', 0.1))
 
-    prodstr = ""
-    filestr = ""
+        if VARIABLE_SMOOTHING == True:
+            var_contourf = ax.contourf(lon, lat, 
+                                       smooth_n_point(data.variables[vtable['cldcvr']][:],
+                                                      SMOOTHING_POINTS,
+                                                      SMOOTHING_PASSES), 
+                                       levels=levels, 
+                                       transform=crs.PlateCarree(), 
+                                       cmap=kwargs.pop('cldcvr_pallete', cm.Blues), 
+                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
+        else:
+            var_contourf = ax.contourf(lon, lat, 
+                                       data.variables[vtable['cldcvr']][:], 
+                                       levels=levels, 
+                                       transform=crs.PlateCarree(), 
+                                       cmap=kwargs.pop('cldcvr_pallete', cm.Blues), 
+                                       vmin=levels.min(),
+                                       vmax=levels.max(),
+                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
+        cb = cb_fig.colorbar(var_contourf, 
+                          ax=ax, 
+                          cax=cb_ax,
+                          ticks=levels[::2], 
+                          orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
+                          shrink=0.77)
+        cb.set_label('Fraction of Cloud Cover', size='x-large', **cbar_opts)
 
-    prodstr, filestr = draw_contourf_lines(fig, ax,
-                                           data,
-                                           sel_level,
-                                           products,
-                                           'era5',
-                                           prodstr,
-                                           filestr,
-                                           fig_for_cb=cbfig,
-                                           ax_for_cb=cbax,
-                                           **kwargs)
+        prodstr += "#Fraction of Cloud Cover (shaded)"
+        prodabbr += "_CC"
 
-    prodstr, filestr = draw_contour_lines(fig, ax,
-                                          data,
-                                          sel_level,
-                                          products,
-                                          'era5',
-                                          prodstr,
-                                          filestr,
-                                          **kwargs)
+    if "rh_cf" in products:
+        levels = np.arange(kwargs.pop('rh_level_min', 0),
+                           kwargs.pop('rh_level_max', 1.1),
+                           kwargs.pop('rh_level_step', 0.1))
 
-    prodstr, filestr = draw_wind_display(fig, ax,
-                                         data,
-                                         sel_level,
-                                         products,
-                                         'era5',
-                                         prodstr,
-                                         filestr,
-                                         **kwargs)
+        if VARIABLE_SMOOTHING == True:
+            var_contourf = ax.contourf(lon, lat, 
+                                       smooth_n_point(data.variables[vtable['rh']][:], 
+                                                      SMOOTHING_POINTS,
+                                                      SMOOTHING_PASSES), 
+                                       levels=levels, 
+                                       transform=crs.PlateCarree(), 
+                                       cmap=kwargs.pop('rh_pallete', cm.terrain_r), 
+                                       extend='max',
+                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
+        else:
+            var_contourf = ax.contourf(lon, lat, 
+                                       data.variables[vtable['rh']][:], 
+                                       levels=levels, 
+                                       transform=crs.PlateCarree(), 
+                                       cmap=kwargs.pop('rh_pallete', cm.terrain_r), 
+                                       vmin=levels.min(),
+                                       vmax=levels.max(),
+                                       extend='max',
+                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
+        cb = cb_fig.colorbar(var_contourf, 
+                          ax=ax, 
+                          cax=cb_ax,
+                          ticks=levels[::2], 
+                          orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
+                          shrink=0.77,
+                          extendrect=True)
+        cb.set_label('Relative Humidty (%)', size='x-large', **cbar_opts)
 
-    if points:
-        plot_points(plt, ax,
-                    points,
-                    x_label_offset=X_LABEL_OFFSET,
-                    y_label_offset=Y_LABEL_OFFSET,
-                    draw_labels=POINT_LABEL_VISIBLE,
-                    draw_arrows=DRAW_LABEL_ARROWS,
-                    point_style=POINT_STYLE,
-                    point_label_style=POINT_LABEL_STYLE)
-    
-    prod_titles = prodstr.split('#')
-    if len(prod_titles[1:]) > 1:
-        prod_titles[-1] = "and " + prod_titles[-1]
-        if len(prodstr) >= 40:
-            prod_titles[round(len(prod_titles)/2)] = '\n' + prod_titles[round(len(prod_titles)/2)]
-    
-    titlestr = ", ".join(prod_titles)
-    titlestr = titlestr[2:]
+        prodstr += "#Relative Humidity (%, shaded)"
+        prodabbr += "_RH"
 
-    if kwargs.get('save_to_kmz'):
-        file_name = "PlanView_" + str(sel_level) + filestr + "_" + file_day + "_" + file_time +"_ERA5"
-        layer_name = f"ERA5 Reanalysis at {np.datetime_as_string(data['valid_time'].values, timezone='UTC')[:-11].replace('T', ' ')} UTC"
-        layer_desc = titlestr.replace('/\n', ' ') + f', at {sel_level} hPa level'
-        
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
+    if "wind_cf" in products:
+        levels = np.arange(kwargs.pop('wind_level_min', 0),
+                           kwargs.pop('wind_level_max', 40 if sel_level > 500 else 100),
+                           kwargs.pop('wind_level_step', 2 if sel_level > 500 else 5))
 
-        dest_path = os.path.join(save_dir, file_name + ".kmz")
+        wind_speed = mpcalc.wind_speed(data[vtable['u']], data[vtable['v']]).metpy.convert_units('knots')
 
-        save_figs_to_kml(dest_path,
-                         (bbox[2], bbox[3]),
-                         (bbox[0], bbox[1]),
-                         fig,
-                         [layer_name],
-                         [layer_desc],
-                         colorbar_fig=cbfig)
+        if VARIABLE_SMOOTHING == True:
+            var_contourf = ax.contourf(lon, lat, 
+                                       smooth_n_point(wind_speed, 
+                                                      SMOOTHING_POINTS,
+                                                      SMOOTHING_PASSES), 
+                                       levels=levels, 
+                                       transform=crs.PlateCarree(), 
+                                       cmap=kwargs.pop('wind_pallete', cm.jet), 
+                                       extend='max',
+                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
+        else:
+            var_contourf = ax.contourf(lon, lat, 
+                                       wind_speed, 
+                                       levels=levels, 
+                                       transform=crs.PlateCarree(), 
+                                       cmap=kwargs.pop('wind_pallete', cm.jet), 
+                                       vmin=levels.min(),
+                                       vmax=levels.max(),
+                                       extend='max',
+                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
+        cb = cb_fig.colorbar(var_contourf, 
+                          ax=ax, 
+                          cax=cb_ax,
+                          ticks=levels[::2], 
+                          orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
+                          shrink=0.77)
+        cb.set_label('Wind Speed (kts)', size='x-large', **cbar_opts)
 
-        plt.close(fig)
-        if cbfig:
-            plt.close(cbfig)
+        prodstr += "#Wind Speed (kts, shaded)"
+        prodabbr += "_WS"
 
-    else:
-        plot_towns(ax, 
-               (bbox[2], bbox[3]),
-               (bbox[0], bbox[1]), 
-               scale_rank=TOWN_SCALE_RANK)
+    if "vv_cf" in products:
+        levels = np.arange(kwargs.pop('vv_level_min', -450),
+                           kwargs.pop('vv_level_max', 450),
+                           kwargs.pop('vv_level_step', 10))
 
-        draw_logo(ax)
-    
-        descstr = f"{str(data['isobaricInhPa'].values)} hPa Level\nValid at {np.datetime_as_string(data['valid_time'].values, timezone='UTC')[:-11].replace('T', ' ')} UTC"
-        ax.set_title(f'ERA5 Reanalysis {titlestr}', loc='left', fontweight='bold', fontsize=15)
-        ax.set_title(descstr, loc='right')
+        if model == "hrrr":
+            vv = vertical_velocity(data[vtable['vv']],
+                                   data[vtable['pres']],
+                                   data[vtable['temp']],
+                                   data[vtable['mxgrat']])
 
-        file_name = "PlanView_" + str(sel_level) + filestr + "_" + file_day + "_" + file_time +"_ERA5"
-        
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
+            vv = vv.magnitude * 196.9 #m/s to ft/min
 
-        dest_path = os.path.join(save_dir, file_name + ".png")
+        if VARIABLE_SMOOTHING == True:
+            var_contourf = ax.contourf(lon, lat, 
+                                       smooth_n_point(vv, 
+                                                      SMOOTHING_POINTS,
+                                                      SMOOTHING_PASSES), 
+                                       levels=levels, 
+                                       transform=crs.PlateCarree(), 
+                                       cmap=kwargs.pop('vv_pallete', cm.bwr), 
+                                       extend='both',
+                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
+        else:
+            var_contourf = ax.contourf(lon, lat, 
+                                       vv, 
+                                       levels=levels, 
+                                       transform=crs.PlateCarree(), 
+                                       cmap=kwargs.pop('vv_pallete', cm.bwr), 
+                                       vmin=levels.min(),
+                                       vmax=levels.max(),
+                                       extend='both',
+                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
+        cb = cb_fig.colorbar(var_contourf, 
+                          ax=ax, 
+                          cax=cb_ax,
+                          ticks=levels[::2], 
+                          orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
+                          shrink=0.77)
+        cb.set_label('Vertical Velocity (ft/s)', size='x-large', **cbar_opts)
 
-        fig.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
-        plt.close(fig)
+        prodstr += "#Vertical Velocity (ft/s, shaded)"
+        prodabbr += "_VV"
+
+    return prodstr, prodabbr
 
 def draw_contourf_lines(fig: mpl.figure.Figure,
                         ax: mpl.axes.Axes,
