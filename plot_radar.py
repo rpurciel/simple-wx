@@ -1,46 +1,9 @@
-'''
-IMPLEMENTED VARIABLES AND DISPLAY TYPES:
-
-    Shaded/Filled contours: 
-    Cloud Cover ['cldcvr_cf'], Relative Humidity (%) ['rh_cf'], Wind Speed (kts) ['wind_cf'],
-    Vertical Velocity (ft/min) ['vv_cf']
-
-    Contours:
-    Temperature (°C) ['temp_c'], Geopotential Height (m) ['gpm_c']
-
-    Vectors:
-    Wind (kts) ['wind_vectors']
-
-    Barbs:
-    Wind (kts) ['wind_barbs']
-
-    Grid Point Values:
-    Wind (kts) ['wind_values']
-    
-'''
-
-DEFAULT_NEXRAD_PRODUCT = 'reflectivity'
-DEFAULT_NEXRAD_SCAN_ANGLE = 0.5
 ## Set the DPI of the saved output file
 ## (Default: 300)
 FILE_DPI = 300
 
-TOWN_SCALE_RANK = 5
 
-'''
-Used to set the style of any user input points shown on the map.
-POINT_STYLE is used for the point(s), and POINT_LABEL_STYLE is used for any
-point label(s) given. No labels are shown if POINT_LABEL_VISIBLE is False.
-'''
-POINT_STYLE = {'color': 'black', 'markersize': 10, 'markeredgecolor': 'black'}
-POINT_LABEL_VISIBLE = True
-DRAW_LABEL_ARROWS = True
-POINT_LABEL_STYLE = {'color': 'black', 'fontsize': 14, 'fontweight': 'bold'}
 
-## Set the positioning of the labels relative to the points being plotted
-## (Default: X=0.2, Y=0.1)
-Y_LABEL_OFFSET = -0.2
-X_LABEL_OFFSET = 0.2
 
 
 
@@ -129,9 +92,9 @@ def plot_nexrad_l2(file_path: str,
                    save_dir: str,
                    points: list[tuple[float, float, str, str], ...],
                    bbox: list[float, float, float, float],
-                   product: str = DEFAULT_NEXRAD_PRODUCT,
+                   product: str,
                    sweep_idx: float = None,
-                   sweep_angle: float = DEFAULT_NEXRAD_SCAN_ANGLE,
+                   sweep_angle: float = None,
                    **kwargs) -> None:
 
     try:
@@ -149,7 +112,6 @@ def plot_nexrad_l2(file_path: str,
     sweep_angles = data.fixed_angle['data']
     radar_lat = data.latitude['data'][0]
     radar_lon = data.longitude['data'][0]
-    print(radar_lat, radar_lon)
     
     if sweep_angle:
         sel_sweep_idx = (np.abs(sweep_angles-sweep_angle)).argmin()
@@ -192,8 +154,8 @@ def plot_nexrad_l2(file_path: str,
                                max_lat=bbox[0],
                                min_lon=bbox[3],
                                max_lon=bbox[2],
-                               vmin=-12, 
-                               vmax=64, 
+                               vmin=kwargs.pop('radar_vmin', -12), 
+                               vmax=kwargs.pop('radar_vmax', 64),  
                                ax=ax)
 
     if kwargs.get('show_colorbar'):
@@ -211,12 +173,7 @@ def plot_nexrad_l2(file_path: str,
     if points:
         plot_points(plt, ax,
                     points,
-                    x_label_offset=X_LABEL_OFFSET,
-                    y_label_offset=Y_LABEL_OFFSET,
-                    draw_labels=POINT_LABEL_VISIBLE,
-                    draw_arrows=DRAW_LABEL_ARROWS,
-                    point_style=POINT_STYLE,
-                    point_label_style=POINT_LABEL_STYLE)
+                    **kwargs)
 
     if kwargs.get('save_to_kmz'):
 
@@ -246,7 +203,7 @@ def plot_nexrad_l2(file_path: str,
         plot_towns(ax, 
                   (bbox[2], bbox[3]),
                   (bbox[0], bbox[1]), 
-                  scale_rank=TOWN_SCALE_RANK)
+                  scale_rank=kwargs.pop('plot_towns_scale_rank', 5))
         draw_logo(ax)
         
         ax.set_title(f"{radar_id} Radar {product.title()}", 
@@ -274,7 +231,7 @@ def plot_mrms(file_path: str,
                 **kwargs) -> None:
 
     try:
-        data = xr.open_dataset(file_path, engine="netcdf4")
+        data = xr.open_dataset(file_path, engine="cfgrib")
     except Exception as e:
         raise e
 
@@ -298,7 +255,7 @@ def plot_mrms(file_path: str,
 
         cbar_opts = {}
 
-    ax.contourf(lon, lat, 
+    cf = ax.contourf(lon, lat, 
                 reflectivity, 
                 transform = crs.PlateCarree(), 
                 levels=DBZ_LEVELS, 
@@ -307,29 +264,27 @@ def plot_mrms(file_path: str,
                 extend='max')
 
     if kwargs.get('show_colorbar'):
-        cb = cbfig.colorbar(ax=ax,
+        cb = cbfig.colorbar(cf,
+                            ax=ax,
                             cax=cbax,
-                            orientation = "horizontal", 
+                            orientation = "vertical", 
                             pad=.05,
                             shrink=0.7,
                             use_gridspec=False)
-        cb.set_label('Reflectivity (dBZ)', size='x-large', **cbar_opts)
+        cb.set_label('Reflectivity (dBZ)', 
+                     size='x-large', 
+                     **cbar_opts)
 
     if points:
         plot_points(plt, ax,
                     points,
-                    x_label_offset=X_LABEL_OFFSET,
-                    y_label_offset=Y_LABEL_OFFSET,
-                    draw_labels=POINT_LABEL_VISIBLE,
-                    draw_arrows=DRAW_LABEL_ARROWS,
-                    point_style=POINT_STYLE,
-                    point_label_style=POINT_LABEL_STYLE)
+                    **kwargs)
 
     if kwargs.get('save_to_kmz'):
 
-        file_name = sat_id + "_" + sel_band_str + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
-        layer_name = sat_id.replace("G", "GOES-") + " image at " + scan_end.strftime('%d %B %Y %H:%M UTC ')
-        layer_desc = IMPLEMENTED_BANDS[str(band)]
+        file_name = file_name = f"{radar_id}_{str(round(sel_sweep_ang, 1)).replace('.','_')}degScan_{scan_time.strftime('%Y%m%d_%H%M%S%Z')}"
+        layer_name = f"{radar_id} Radar {product.title()}"
+        layer_desc = f"{round(sel_sweep_ang, 1)}° Beam Angle\n{scan_time.strftime('%d %B %Y %H:%M:%S UTC')}"
 
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
@@ -353,15 +308,18 @@ def plot_mrms(file_path: str,
         plot_towns(ax, 
                   (bbox[2], bbox[3]),
                   (bbox[0], bbox[1]), 
-                  scale_rank=TOWN_SCALE_RANK)
+                  scale_rank=kwargs.pop('plot_towns_scale_rank', 5))
         draw_logo(ax)
+        
+        ax.set_title(f"MRMS Composite Reflectivity", 
+                     loc='left', 
+                     fontweight='bold', 
+                     fontsize=15)
 
-        title_info = orbital_slot.replace("-Test", "") + " (" + sat_id.replace("G", "GOES-") + ")\n" + IMPLEMENTED_BANDS[str(band)]
+        ax.set_title(f"{scan_time.strftime('%d %B %Y %H:%M:%S UTC')}", 
+                     loc='right')
         
-        ax.set_title(title_info, loc='left', fontweight='bold', fontsize=15)
-        ax.set_title('{}'.format(scan_end.strftime('%d %B %Y %H:%M UTC ')), loc='right')
-        
-        file_name = sat_id + "_" + sel_band_str + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
+        file_name = f"MRMS_CompositeReflectivity_{scan_time.strftime('%Y%m%d_%H%M%S%Z')}"
         
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
@@ -374,19 +332,19 @@ def plot_mrms(file_path: str,
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description=f'Plot NEXRAD archive data or MRMS (Multi-Radar Multi-Sensor) data.')
-    parser.add_argument('--nexrad-product',
-                        help=f'specify a NEXRAD product to be plotted (default: {DEFAULT_NEXRAD_PRODUCT})',
+    parser.add_argument('--product',
+                        help=f'specify a NEXRAD product to be plotted (default: reflectivity)',
                         type=str,
                         metavar='product',
                         dest='rad_prod',
                         default=None)
-    parser.add_argument('--nexrad-scan-angle',
-                        help=f'specify a scan angle to be used when plotting NEXRAD radar (default: {DEFAULT_NEXRAD_SCAN_ANGLE})',
+    parser.add_argument('--scan-angle',
+                        help=f'specify a scan angle to be used when plotting NEXRAD radar (default: 0.5)',
                         type=str,
                         metavar='angle',
                         dest='rad_sa',
                         default=None)
-    parser.add_argument('--nexrad-scan-index',
+    parser.add_argument('--scan-index',
                         help='specify scan angle (via index) to be used when plotting NEXRAD radar',
                         type=str,
                         metavar='index',
@@ -460,22 +418,6 @@ if __name__ == "__main__":
     else:
         save_dir = args.save_directory
 
-    print(save_dir)
-
-    if args.rad_prod:
-        product = args.rad_prod
-    else:
-        product = DEFAULT_NEXRAD_PRODUCT
-
-    if args.rad_sa:
-        scan_angle = args.rad_sa
-    else:
-        scan_angle = DEFAULT_NEXRAD_SCAN_ANGLE
-
-    if args.rad_sa_idx:
-        scan_idx = args.rad_sa_idx
-    else:
-        scan_idx = None
 
     if args.settings_file:
         try:
@@ -500,15 +442,13 @@ if __name__ == "__main__":
             with open(args.points_file, newline='') as pointcsv:
                 reader = csv.reader(pointcsv, delimiter=',')
                 for row in reader:
-                    if row[2] == "" or row[2].isspace():
-                        marker = 'x'
-                    else:
-                        marker = row[2]
 
-                    if row[3] == "" or row[3].isspace():
-                        point = (float(row[0]), float(row[1]), marker, None)
-                    else:
-                        point = (float(row[0]), float(row[1]), marker, row[3])
+                    point = (float(row[0]),
+                             float(row[1]),
+                             row[2] if len(row) > 2 else None,
+                             row[3] if len(row) > 3 else None,
+                             row[4] if len(row) > 4 else None,
+                             row[5] if len(row) > 5 else None)
                     points += [point]
         except Exception as err:
             raise err
@@ -541,9 +481,9 @@ if __name__ == "__main__":
                                save_dir,
                                points,
                                bbox,
-                               product,
-                               scan_idx,
-                               scan_angle,
+                               args.rad_prod if args.rad_prod else "reflectivity",
+                               int(args.rad_sa_idx) if args.rad_sa_idx else None,
+                               float(args.rad_sa) if args.rad_sa else 0.5,
                                **user_settings)
             progress.update()
 

@@ -1,3 +1,27 @@
+## Library Info
+
+<details>
+<summary>Completeness</summary>
+
+| Script | Next Goal | Completeness | % 
+|---|---|---|---|
+|`airmet_to_json_wizard.py`| Clean code
+|`create_meteogram_data.py`| Model support (ERA5/GFS/WRF/+), other variables, clean code |
+|`create_movie.py`| Clean code |
+|`create_raob_sounding.py`| Model support (GFS/WRF/+), clean code |
+|`create_sun_moon_pos_table.py`| Elevation support |
+|`create_twilight_times_listing.py`| Elevation support |
+|`download_aws.py`| Clean code, model forecast data support |
+|`download_eumetsat_from_cart.py`| Clean code |
+|`plot_airmet.py`| Clean code, make more general purpose (CSIGs, etc) |
+|`plot_cross_section.py`| Build functionality |
+|`plot_glm.py`| Clean code |
+|`plot_goes.py`| Clean code, add in addl. composites |
+|`plot_himawari.py`| Clean code, add in addl. composites |
+|`plot_meteosat.py`|Clean code, add in addl. composites |
+|`plot_plan_view.py`| Model support (GFS/WRF/+), surface-level support, addl. variables |
+|`plot_radar.py`| 
+
 ## Downloading Scripts
 
 <details>
@@ -88,34 +112,127 @@ Notes
 </details>
 
 <details>
-<summary>create_meteogram_data.py</summary>
+<summary>plot_meteosat.py</summary>
 
-A script to extract surface-level data from a series of data files,
-and place that data into a CSV for plotting as a meteogram. Each row
-of the CSV has the variables for the point, and a time (which corresponds
-to the valid time of the file.)
+A script to plot products from GOES satellites, including single-band
+channels and certain composite products.
 
-Input → Model data file(s), in either Grib/Grib2 or NetCDF format 
-		(Currently only HRRR model supported)
+Input → Multi-band GOES data files ("ABI-MCMIPC")
+	   (Default file type downloaded from AWS script)
 
-Output → A CSV containing surface-level data from the specified point,
-		for all of the valid times contained in the data files (not
-		necissarily ordered). A location verification plot can also be
-		produced if desired.
+Output → A series of images that plot the selected product, one image
+    per input file.
 
 Options
 
 | Option | Variable/Flag | Input | Description | 
 |---|---|---|---|
-| model | _(required)_ | hrrr, gfs, era5, wrf | Specify data from what model is to be used. Will error or produce undefined result if data format differs from specifed model |
 | input_file_directory | _(required)_ | path | Directory to read input files from |
 | save_directory | _(required)_ | path | Directory to save output to |
-| location | -l, --loc | lat, lon | Specify a point to take the meteogram data from |
-| temp_units | -tu, --temperature-units | unit (string) | Specify the unit to be used for temperature/dewpoint |
-| wind_units | -wu, --wind-units | unit (string) | Specify the unit to be used for wind speed/gusts |
-| pressure_units | -pu, --pressure-units | unit (String) | Specify the unit to be used for pressure |
-| verification_plot | -vp, --verification-plot | _None_ | Generate a plot to verify location of meteogram |
-| precip_type | -pt, --record-precip-type | _None_ | Record precip type (if available) as a string (*Not Yet Implemented*)
+| band | -b, --band | band no. (int) | Specify a band to plot |
+| composite | -c, --composite | product (String) | Specify a composite product to plot |
+| bbox | --bbox | N S E W (int) | Specify the bounding box for the image in decimal lat-lon |
+| center | --center | lat lon rad (float) | Automatically center the bounding box of the image around a point, with a given radius |
+| points_from_file | --points-from-file | path | Specify a CSV file to read in points from, to be annotated on the plot. CSV must be in format: lat,lon,marker,label |
+| pallete | -p, --pallete | pallete (String) | Specify the color pallete to be used for the image (*single band only*)
+| show_colorbar | -cb, --show-colorbar | _None_ | Flag to turn on display of colorbar, for either albedo or brightness temperature (*single band only*)
+| pixel_value | -pv, --pixel-value | _None_ | Flag to turn on display of pixel values, for either albedo or brightness temperature (*single band only*)
+
+Notes
+- A satellite band **or** a composite product must be specified, not both.
+</details>
+
+<details>
+<summary>plot_himawari.py</summary>
+
+A script to plot products from GOES satellites, including single-band
+channels and certain composite products.
+
+Input → Multi-band GOES data files ("ABI-MCMIPC")
+	   (Default file type downloaded from AWS script)
+
+Output → A series of images that plot the selected product, one image
+    per input file.
+
+Options
+
+| Option | Variable/Flag | Input | Description | 
+|---|---|---|---|
+| input_file_directory | _(required)_ | path | Directory to read input files from |
+| save_directory | _(required)_ | path | Directory to save output to |
+| band | -b, --band | band no. (int) | Specify a band to plot |
+| composite | -c, --composite | product (String) | Specify a composite product to plot |
+| bbox | --bbox | N S E W (int) | Specify the bounding box for the image in decimal lat-lon |
+| center | --center | lat lon rad (float) | Automatically center the bounding box of the image around a point, with a given radius |
+| points_from_file | --points-from-file | path | Specify a CSV file to read in points from, to be annotated on the plot. CSV must be in format: lat,lon,marker,label |
+| pallete | -p, --pallete | pallete (String) | Specify the color pallete to be used for the image (*single band only*)
+| show_colorbar | -cb, --show-colorbar | _None_ | Flag to turn on display of colorbar, for either albedo or brightness temperature (*single band only*)
+| pixel_value | -pv, --pixel-value | _None_ | Flag to turn on display of pixel values, for either albedo or brightness temperature (*single band only*)
+
+Notes
+- A satellite band **or** a composite product must be specified, not both.
+</details>
+
+<details>
+<summary>plot_plan_view.py</summary>
+
+A script to plot products from GOES satellites, including single-band
+channels and certain composite products.
+
+Input → Multi-band GOES data files ("ABI-MCMIPC")
+	   (Default file type downloaded from AWS script)
+
+Output → A series of images that plot the selected product, one image
+    per input file.
+
+Options
+
+| Option | Variable/Flag | Input | Description | 
+|---|---|---|---|
+| input_file_directory | _(required)_ | path | Directory to read input files from |
+| save_directory | _(required)_ | path | Directory to save output to |
+| band | -b, --band | band no. (int) | Specify a band to plot |
+| composite | -c, --composite | product (String) | Specify a composite product to plot |
+| bbox | --bbox | N S E W (int) | Specify the bounding box for the image in decimal lat-lon |
+| center | --center | lat lon rad (float) | Automatically center the bounding box of the image around a point, with a given radius |
+| points_from_file | --points-from-file | path | Specify a CSV file to read in points from, to be annotated on the plot. CSV must be in format: lat,lon,marker,label |
+| pallete | -p, --pallete | pallete (String) | Specify the color pallete to be used for the image (*single band only*)
+| show_colorbar | -cb, --show-colorbar | _None_ | Flag to turn on display of colorbar, for either albedo or brightness temperature (*single band only*)
+| pixel_value | -pv, --pixel-value | _None_ | Flag to turn on display of pixel values, for either albedo or brightness temperature (*single band only*)
+
+Notes
+- A satellite band **or** a composite product must be specified, not both.
+</details>
+
+<details>
+<summary>plot_radar.py</summary>
+
+A script to plot products from GOES satellites, including single-band
+channels and certain composite products.
+
+Input → Multi-band GOES data files ("ABI-MCMIPC")
+	   (Default file type downloaded from AWS script)
+
+Output → A series of images that plot the selected product, one image
+    per input file.
+
+Options
+
+| Option | Variable/Flag | Input | Description | 
+|---|---|---|---|
+| input_file_directory | _(required)_ | path | Directory to read input files from |
+| save_directory | _(required)_ | path | Directory to save output to |
+| band | -b, --band | band no. (int) | Specify a band to plot |
+| composite | -c, --composite | product (String) | Specify a composite product to plot |
+| bbox | --bbox | N S E W (int) | Specify the bounding box for the image in decimal lat-lon |
+| center | --center | lat lon rad (float) | Automatically center the bounding box of the image around a point, with a given radius |
+| points_from_file | --points-from-file | path | Specify a CSV file to read in points from, to be annotated on the plot. CSV must be in format: lat,lon,marker,label |
+| pallete | -p, --pallete | pallete (String) | Specify the color pallete to be used for the image (*single band only*)
+| show_colorbar | -cb, --show-colorbar | _None_ | Flag to turn on display of colorbar, for either albedo or brightness temperature (*single band only*)
+| pixel_value | -pv, --pixel-value | _None_ | Flag to turn on display of pixel values, for either albedo or brightness temperature (*single band only*)
+
+Notes
+- A satellite band **or** a composite product must be specified, not both.
 </details>
 
 <details>
@@ -144,6 +261,27 @@ Options
 | save_kmz | --save-kmz | _None_ | Flag to save all detected flashes in a KMZ |
 
 </details>
+
+<details>
+<summary>plot_airmet.py</summary>
+
+A script to create a movie from a series of images, in mp4 format.
+
+Input → A series of images
+
+Output → An mp4 video at a specified framerate
+
+Options
+
+| Option | Variable/Flag | Input | Description | 
+|---|---|---|---|
+| input_file_directory | _(required)_ | path | Directory to read input files from |
+| save_directory | _(required)_ | path | Directory to save output to |
+| title | -t, --title | title (string) | Specify the title of the movie (default is "Movie[.mp4]") |
+| fps | --fps | fps (int) | Specify the frames per second of the video |
+
+</details>
+
 
 ## Creating/Transforming Scripts
 
@@ -175,6 +313,130 @@ Options
 | verification_plot | -vp, --verification-plot | _None_ | Flag to generate a plot that can be used to verify the location of the soundings generated |
 | grid_points | -gp, --grid-points | _None_ | Flag to save all grid points that are used by the script in a KMZ |
 
+</details>
+
+<details>
+<summary>create_meteogram_data.py</summary>
+
+A script to extract surface-level data from a series of data files,
+and place that data into a CSV for plotting as a meteogram. Each row
+of the CSV has the variables for the point, and a time (which corresponds
+to the valid time of the file.)
+
+Input → Model data file(s), in either Grib/Grib2 or NetCDF format 
+		(Currently only HRRR model supported)
+
+Output → A CSV containing surface-level data from the specified point,
+		for all of the valid times contained in the data files (not
+		necissarily ordered). A location verification plot can also be
+		produced if desired.
+
+Options
+
+| Option | Variable/Flag | Input | Description | 
+|---|---|---|---|
+| model | _(required)_ | hrrr, gfs, era5, wrf | Specify data from what model is to be used. Will error or produce undefined result if data format differs from specifed model |
+| input_file_directory | _(required)_ | path | Directory to read input files from |
+| save_directory | _(required)_ | path | Directory to save output to |
+| location | -l, --loc | lat, lon | Specify a point to take the meteogram data from |
+| temp_units | -tu, --temperature-units | unit (string) | Specify the unit to be used for temperature/dewpoint |
+| wind_units | -wu, --wind-units | unit (string) | Specify the unit to be used for wind speed/gusts |
+| pressure_units | -pu, --pressure-units | unit (String) | Specify the unit to be used for pressure |
+| verification_plot | -vp, --verification-plot | _None_ | Generate a plot to verify location of meteogram |
+| precip_type | -pt, --record-precip-type | _None_ | Record precip type (if available) as a string (*Not Yet Implemented*)
+</details>
+
+<details>
+<summary>create_raob_sounding.py</summary>
+
+A script to extract surface-level data from a series of data files,
+and place that data into a CSV for plotting as a meteogram. Each row
+of the CSV has the variables for the point, and a time (which corresponds
+to the valid time of the file.)
+
+Input → Model data file(s), in either Grib/Grib2 or NetCDF format 
+		(Currently only HRRR model supported)
+
+Output → A CSV containing surface-level data from the specified point,
+		for all of the valid times contained in the data files (not
+		necissarily ordered). A location verification plot can also be
+		produced if desired.
+
+Options
+
+| Option | Variable/Flag | Input | Description | 
+|---|---|---|---|
+| model | _(required)_ | hrrr, gfs, era5, wrf | Specify data from what model is to be used. Will error or produce undefined result if data format differs from specifed model |
+| input_file_directory | _(required)_ | path | Directory to read input files from |
+| save_directory | _(required)_ | path | Directory to save output to |
+| location | -l, --loc | lat, lon | Specify a point to take the meteogram data from |
+| temp_units | -tu, --temperature-units | unit (string) | Specify the unit to be used for temperature/dewpoint |
+| wind_units | -wu, --wind-units | unit (string) | Specify the unit to be used for wind speed/gusts |
+| pressure_units | -pu, --pressure-units | unit (String) | Specify the unit to be used for pressure |
+| verification_plot | -vp, --verification-plot | _None_ | Generate a plot to verify location of meteogram |
+| precip_type | -pt, --record-precip-type | _None_ | Record precip type (if available) as a string (*Not Yet Implemented*)
+</details>
+
+<details>
+<summary>create_sun_moon_pos_table.py</summary>
+
+A script to extract surface-level data from a series of data files,
+and place that data into a CSV for plotting as a meteogram. Each row
+of the CSV has the variables for the point, and a time (which corresponds
+to the valid time of the file.)
+
+Input → Model data file(s), in either Grib/Grib2 or NetCDF format 
+		(Currently only HRRR model supported)
+
+Output → A CSV containing surface-level data from the specified point,
+		for all of the valid times contained in the data files (not
+		necissarily ordered). A location verification plot can also be
+		produced if desired.
+
+Options
+
+| Option | Variable/Flag | Input | Description | 
+|---|---|---|---|
+| model | _(required)_ | hrrr, gfs, era5, wrf | Specify data from what model is to be used. Will error or produce undefined result if data format differs from specifed model |
+| input_file_directory | _(required)_ | path | Directory to read input files from |
+| save_directory | _(required)_ | path | Directory to save output to |
+| location | -l, --loc | lat, lon | Specify a point to take the meteogram data from |
+| temp_units | -tu, --temperature-units | unit (string) | Specify the unit to be used for temperature/dewpoint |
+| wind_units | -wu, --wind-units | unit (string) | Specify the unit to be used for wind speed/gusts |
+| pressure_units | -pu, --pressure-units | unit (String) | Specify the unit to be used for pressure |
+| verification_plot | -vp, --verification-plot | _None_ | Generate a plot to verify location of meteogram |
+| precip_type | -pt, --record-precip-type | _None_ | Record precip type (if available) as a string (*Not Yet Implemented*)
+</details>
+
+<details>
+<summary>create_twilight_times_listing.py</summary>
+
+A script to extract surface-level data from a series of data files,
+and place that data into a CSV for plotting as a meteogram. Each row
+of the CSV has the variables for the point, and a time (which corresponds
+to the valid time of the file.)
+
+Input → Model data file(s), in either Grib/Grib2 or NetCDF format 
+		(Currently only HRRR model supported)
+
+Output → A CSV containing surface-level data from the specified point,
+		for all of the valid times contained in the data files (not
+		necissarily ordered). A location verification plot can also be
+		produced if desired.
+
+Options
+
+| Option | Variable/Flag | Input | Description | 
+|---|---|---|---|
+| model | _(required)_ | hrrr, gfs, era5, wrf | Specify data from what model is to be used. Will error or produce undefined result if data format differs from specifed model |
+| input_file_directory | _(required)_ | path | Directory to read input files from |
+| save_directory | _(required)_ | path | Directory to save output to |
+| location | -l, --loc | lat, lon | Specify a point to take the meteogram data from |
+| temp_units | -tu, --temperature-units | unit (string) | Specify the unit to be used for temperature/dewpoint |
+| wind_units | -wu, --wind-units | unit (string) | Specify the unit to be used for wind speed/gusts |
+| pressure_units | -pu, --pressure-units | unit (String) | Specify the unit to be used for pressure |
+| verification_plot | -vp, --verification-plot | _None_ | Generate a plot to verify location of meteogram |
+| precip_type | -pt, --record-precip-type | _None_ | Record precip type (if available) as a string (*Not Yet Implemented*)
 </details>
 
 <details>

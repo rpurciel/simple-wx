@@ -1,37 +1,9 @@
 ## Set to True if you want more towns plotted on the map
 ## (Default: False)
-TOWN_SCALE_RANK = 5
+DEFAULT_TOWN_SCALE_RANK = 5
 
 ## Set the DPI of the saved output file
-FILE_DPI = 300
-
-## Set the default color pallete to be used when plotting single-band imagery.
-## (Default: "Greys_r")
-DEFAULT_SB_PALLETE = "Greys_r"
-
-DEFAULT_COMPOSITE_PRODUCT = "true_color"
-
-'''
-Used to set the style of any user input points shown on the map.
-POINT_STYLE is used for the point(s), and POINT_LABEL_STYLE is used for any
-point label(s) given. No labels are shown if POINT_LABEL_VISIBLE is False.
-'''
-POINT_STYLE = {'color': 'red', 'markersize': 6}
-POINT_LABEL_VISIBLE = True
-POINT_LABEL_STYLE = {'color': 'red', 'fontsize': 12}
-DRAW_LABEL_ARROWS = True
-
-
-## Set the positioning of the labels relative to the points being plotted
-## (Default: X=0.2, Y=0.1)
-Y_LABEL_OFFSET = -0.1
-X_LABEL_OFFSET = 0.1
-
-## Set the positioning of the pixel values relative to the upper-left corner
-## of the pixel.
-## (Default: X=5, Y=10)
-X_PIX_VAL_OFFSET = -8
-Y_PIX_VAL_OFFSET = -7
+DEFAULT_FILE_DPI = 300
 
 
 
@@ -52,6 +24,16 @@ Y_PIX_VAL_OFFSET = -7
 
 
 
+###
+
+# STATIC CODE BELOW HERE
+
+###
+
+
+
+
+
 import sys
 import os
 import glob
@@ -61,6 +43,7 @@ import glob
 import argparse
 import csv
 import warnings
+import json
 warnings.simplefilter("ignore")
 
 import xarray as xr
@@ -88,18 +71,6 @@ from __internal_funcs import (plot_towns, draw_logo, plot_points,
 
 matplotlib.use('agg')
 np.seterr(divide = 'ignore', invalid='ignore')
-
-#global params
-DEFAULT_BBOX = [-129.1, -64.4, 23.5, 51] #CONUS - WESN
-
-DEF_GAMMA = 2.2
-
-GEOG_VISIBLE = True
-GEOG_DRAW_STATES = True
-GEOG_DRAW_COASTLINES = True
-
-COLORBAR_VISIBLE = False
-COLORBAR_LABEL = 'Radiance Temperature (K)'
 
 IMPLEMENTED_COMPOSITES = {
     'dust_rgb' : 'Dust RGB',
@@ -134,27 +105,41 @@ IMPLEMENTED_BANDS = {
 def plot_single_band_goes(file_path: str, 
                           save_dir: str, 
                           band: int, 
-                          points: list[tuple[float, float, str], ...],
-                          bbox: list[float, float, float, float] = DEFAULT_BBOX, 
-                          pallete: str = DEFAULT_SB_PALLETE, 
+                          points: list[tuple[float, float, ...], ...],
+                          bbox: list[float, float, float, float], 
+                          pallete: str, 
                           **kwargs):
+
     """
-    Using a bounding box, plots a single satellite band and any points.
+    This function will take a GOES data file 
 
-    Band is specified as a int between 1-16, corresponding to GOES
-    band id.
+    Inputs
+        - file_path, str
+                The path to the GOES multiband (MCIMPC) data file to plot.
+        - save_dir, str
+                The directory to save the resulting image/KMZ to.
+        - band, int
+                The number of the band to plot. Different bands have
+                different wavelengths.
+        - points, list or None
+                A list of points to add to the plot. Each tuple is defined
+                with the following structure:
+                    (lat, lon, marker (opt.), label (opt.), x offset (opt.), y offset (opt.))
+                lat/lon are the only required fields, other fields can be left out and will
+                use default values found in _internal_funcs.py -> plot_points()
+        - bbox, list
+                The bounding box to use for the image. The coordinates should be lats/lons,
+                in the order N-S-E-W.
+        - pallete, str
+                The color pallete to be used for the image. The list of colormaps
+                can be found @ https://matplotlib.org/stable/users/explain/colors/colormaps.html
+                and https://cmasher.readthedocs.io/user/cmap_overviews/cmr_cmaps.html
+        - kwargs, dict
+                A dict of keyword args, used for specific functionality or to modify
+                plot styling. Please refer to the code for a full list.
 
-    Bounding box is specified via a list of length 4:
-    [ll corner lat, ll corner lon, ur corner lat, ur corner lon]
-
-    Points are specified as a list of tuples, including label:
-    [(lat1, lon1, label1), (lat2, lon2, label2), ...]
-
-    Pallete is specified as a matplotlib compatable color pallete
-    name string. Suffix '_r' to reverse the color pallete
-
-    Returns: Success code, time (in seconds) for function to run,
-             path to file
+    Returns
+        None
     """
 
     try:
@@ -169,13 +154,6 @@ def plot_single_band_goes(file_path: str,
     sat_id = data.platform_ID #G18, G17, G16, etc.
 
     proj_info = data.variables['goes_imager_projection']
-    # print(data.variables)
-    # radiance = data.variables['Rad'][:]
-
-    # fk1 = data.variables['planck_fk1'][:]
-    # fk2 = data.variables['planck_fk2'][:]
-    # bc1 = data.variables['planck_bc1'][:]
-    # bc2 = data.variables['planck_bc2'][:]
     
     #BAND SELECTION
 
@@ -193,27 +171,25 @@ def plot_single_band_goes(file_path: str,
     x = data.x
     y = data.y
 
-    #x, y = np.meshgrid(x, y)
-
     #DATA CORRECTIONS
 
     #Bands 1-6 are output in "Reflectance Factor", from 0-1 and can be clip corrected
     #Bands 7-16 are output in "Brightness Temperature", and cannot be clip or gamma corrected
-    if band >= 7: 
+    if (band >= 7) or (kwargs.pop('force_radiance_temperature', False)) : 
         correct_clip = False
         correct_gamma = False
 
-        img_vmin = 180
-        img_vmax = 330
+        img_vmin = kwargs.pop('radiance_temperature_vmin', 180)
+        img_vmax = kwargs.pop('radiance_temperature_vmax', 330)
 
         cbar_label = "Radiance Temperature (K)"
 
-    else:
+    elif (band < 7) or (kwargs.pop('force_reflectance_factor', False)):
         correct_clip = True
         correct_gamma = True
 
-        img_vmin = 0
-        img_vmax = 1
+        img_vmin = kwargs.pop('reflectance_factor_vmin', 0)
+        img_vmax = kwargs.pop('reflectance_factor_vmax', 1)
 
         cbar_label = "Apparent Brightness"
 
@@ -221,7 +197,7 @@ def plot_single_band_goes(file_path: str,
         sel_band = np.clip(sel_band, 0, 1)
 
     if correct_gamma:
-        sel_band = np.power(sel_band, 1/DEF_GAMMA)
+        sel_band = np.power(sel_band, 1/kwargs.pop('gamma_correct_factor', 2.2))
 
     if kwargs.get('save_to_kmz'):  
         fig, ax, cbfig, cbax = define_gearth_compat_fig((bbox[2], bbox[3]),
@@ -240,17 +216,15 @@ def plot_single_band_goes(file_path: str,
     
     img = ax.imshow(sel_band, 
                     origin='upper',
-                    extent=(x.min(), x.max(), y.min(), y.max()),
+                    extent=(x.min(), 
+                            x.max(), 
+                            y.min(), 
+                            y.max()),
                     transform=geog_data,
                     interpolation='none',
-                    vmin = img_vmin,
-                    vmax = img_vmax,
-                    cmap = pallete)
-
-    
-    # ir = [fk2 / (np.log((fk1/radiance) + 1)) - bc1] / bc2
-    
-    # ir = ir[0,:,:]
+                    vmin=img_vmin,
+                    vmax=img_vmax,
+                    cmap=pallete)
 
     if kwargs.get('pixel_value'):
 
@@ -263,40 +237,37 @@ def plot_single_band_goes(file_path: str,
         for lat_row, lon_row, val_row in zip(pix_lats, pix_lons, sel_band[:]):
             for lat, lon, val in zip(lat_row, lon_row, val_row):
                 if not (np.isnan(lat) or np.isnan(lon)):
-                    ax.annotate(str(round(val, 1)), 
+                    ax.annotate(str(round(val, kwargs.pop('pixel_value_decimal_places', 1))), 
                                 (lon, lat),
-                                xytext=(X_PIX_VAL_OFFSET,Y_PIX_VAL_OFFSET),
+                                xytext=(kwargs.pop('pixel_value_x_offset', 0),
+                                        kwargs.pop('pixel_value_y_offset', 0)),
                                 textcoords='offset points',
-                                horizontalalignment='center',
-                                verticalalignment='center', 
-                                color='black',
+                                horizontalalignment=kwargs.pop('pixel_value_vertical_alignment', 'center'),
+                                verticalalignment=kwargs.pop('pixel_value_vertical_alignment', 'center'), 
+                                color=kwargs.pop('pixel_value_color', 'black'),
                                 clip_box=ax.bbox,
-                                fontsize=6,
+                                fontsize=kwargs.pop('pixel_value_fontsize', 6),
                                 transform=crs.PlateCarree(),
                                 annotation_clip=False, 
-                                zorder=30)
+                                zorder=kwargs.pop('pixel_value_zorder', 30))
 
     if kwargs.get('colorbar_visible'):
         cb = cbfig.colorbar(img,
                             ax=ax,
                             cax=cbax,
-                            orientation = "horizontal", 
-                            pad=.05,
+                            orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
                             shrink=0.7,
                             use_gridspec=False)
-        cb.set_label(cbar_label, size='x-large', **cbar_opts)
+        cb.set_label(cbar_label, 
+                     size='x-large', 
+                     **cbar_opts)
 
     #POINT DRAWING
 
     if points:
         plot_points(plt, ax,
                     points,
-                    x_label_offset=X_LABEL_OFFSET,
-                    y_label_offset=Y_LABEL_OFFSET,
-                    draw_labels=POINT_LABEL_VISIBLE,
-                    draw_arrows=DRAW_LABEL_ARROWS,
-                    point_style=POINT_STYLE,
-                    point_label_style=POINT_LABEL_STYLE)
+                    **kwargs)
 
     if kwargs.get('save_to_kmz'):
 
@@ -326,7 +297,7 @@ def plot_single_band_goes(file_path: str,
         plot_towns(ax, 
                   (bbox[2], bbox[3]),
                   (bbox[0], bbox[1]), 
-                  scale_rank=TOWN_SCALE_RANK)
+                  scale_rank=kwargs.pop('plot_towns_scale_rank', 5))
         draw_logo(ax)
 
         title_info = orbital_slot.replace("-Test", "") + " (" + sat_id.replace("G", "GOES-") + ")\n" + IMPLEMENTED_BANDS[str(band)]
@@ -341,33 +312,15 @@ def plot_single_band_goes(file_path: str,
 
         dest_path = os.path.join(save_dir, file_name + ".png")
 
-        fig.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
+        fig.savefig(dest_path, bbox_inches="tight", dpi=kwargs.pop('file_dpi', DEFAULT_FILE_DPI))
         plt.close(fig)
 
 def plot_composite_goes(file_path: str, 
                         save_dir: str,
-                        points: list[tuple[float, float, str], ...], 
-                        bbox: list[float, float, float, float] = DEFAULT_BBOX, 
-                        product: str = DEFAULT_COMPOSITE_PRODUCT,  
+                        points: list[tuple[float, float, ...], ...], 
+                        bbox: list[float, float, float, float], 
+                        product: str,  
                         **kwargs):
-    """
-    Using a bounding box, plots a single satellite band and any points.
-
-    Band is specified as a int between 1-16, corresponding to GOES
-    band id.
-
-    Bounding box is specified via a list of length 4:
-    [ll corner lat, ll corner lon, ur corner lat, ur corner lon]
-
-    Points are specified as a list of tuples, including label:
-    [(lat1, lon1, label1), (lat2, lon2, label2), ...]
-
-    Pallete is specified as a matplotlib compatable color pallete
-    name string. Suffix '_r' to reverse the color pallete
-
-    Returns: Success code, time (in seconds) for function to run,
-             path to file
-    """
 
     try:
         data = xr.open_dataset(file_path, engine="netcdf4")
@@ -416,30 +369,29 @@ def plot_composite_goes(file_path: str,
         
     ax.imshow(rgb_composite, 
                origin='upper',
-               extent=(x.min(), x.max(), y.min(), y.max()),
+               extent=(x.min(), 
+                       x.max(), 
+                       y.min(), 
+                       y.max()),
                transform=geog_data,
                interpolation='none')
     
     if kwargs.get('colorbar_visible'):
-        cb = cbfig.colorbar(ax=ax,
-                       cax=cbax,
-                       orientation = "horizontal", 
-                       pad=.05,
-                       shrink=0.7,
-                       use_gridspec=False)
-        cb.set_label(cbar_label, size='x-large', **cbar_opts)
+        cb = cbfig.colorbar(img,
+                            ax=ax,
+                            cax=cbax,
+                            orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
+                            shrink=0.7,
+                            use_gridspec=False)
+        cb.set_label(cbar_label, 
+                     size='x-large', 
+                     **cbar_opts)
 
-        #POINT DRAWING
-
+    #POINT DRAWING
     if points:
         plot_points(plt, ax,
-            points,
-            x_label_offset=X_LABEL_OFFSET,
-            y_label_offset=Y_LABEL_OFFSET,
-            draw_labels=POINT_LABEL_VISIBLE,
-            draw_arrows=DRAW_LABEL_ARROWS,
-            point_style=POINT_STYLE,
-            point_label_style=POINT_LABEL_STYLE)
+                    points,
+                    **kwargs)
 
     if kwargs.get('save_to_kmz'):
 
@@ -469,7 +421,7 @@ def plot_composite_goes(file_path: str,
         plot_towns(ax, 
                   (bbox[2], bbox[3]),
                   (bbox[0], bbox[1]), 
-                  scale_rank=TOWN_SCALE_RANK)
+                  scale_rank=kwargs.pop('plot_towns_scale_rank', 5))
         draw_logo(ax)
     
         
@@ -486,7 +438,7 @@ def plot_composite_goes(file_path: str,
 
         fig.savefig(dest_path, 
                     bbox_inches="tight", 
-                    dpi=FILE_DPI)
+                    dpi=kwargs.pop('file_dpi', DEFAULT_FILE_DPI))
 
         plt.close(fig)
 
@@ -500,7 +452,7 @@ def _calculate_pixel_lat_lon(proj_x, proj_y, proj_info):
     r_eq = 6378137 #Equitorial radius in m
     r_pol = 6356752.31414 #Polar radius in m
     
-    ### Longitude of Origin ###
+    ### Longitude of Origin ### 
     lon_projection = proj_info.attrs['longitude_of_projection_origin']
     l_0 = lon_projection * (np.pi/180) #Longitude in Radians
     
@@ -784,12 +736,6 @@ if __name__ == "__main__":
                         type=float,
                         metavar=('lat', 'lon', 'rad'),
                         default=None)
-    parser.add_argument('--points-from-file',
-                        help='specify a CSV file to read in points from. CSV file must have no header and be in format: lat,lon,marker,label',
-                        type=str,
-                        metavar='file_path',
-                        dest='points_file',
-                        default=None)
     parser.add_argument('-p', '--pallete',
                         help='specify color pallete to be used (single band only)',
                         type=str,
@@ -806,6 +752,18 @@ if __name__ == "__main__":
                         help='plot value of pixel (SB only)',
                         action='store_true',
                         dest='pixel_value')
+    parser.add_argument('--points-from-file',
+                        help='specify a CSV file to read in points from. CSV file must have no header and be in format: lat,lon,marker,label',
+                        type=str,
+                        metavar='file_path',
+                        dest='points_file',
+                        default=None)
+    parser.add_argument('--settings-from-file',
+                        help='specify a JSON file to read in plot settings from.',
+                        type=str,
+                        metavar='file_path',
+                        dest='settings_file',
+                        default=None)
     parser.add_argument('input_file_directory',  
                         help='directory to read input files from',
                         type=str)
@@ -856,6 +814,8 @@ if __name__ == "__main__":
 
     if args.pallete:
         pal = args.pallete
+    elif (args.band) and (not args.pallete):
+        raise ValueError("A pallete must be specified for plotting of single-band imagery.")
 
     points = []
     if args.points_file:
@@ -863,28 +823,38 @@ if __name__ == "__main__":
             with open(args.points_file, newline='') as pointcsv:
                 reader = csv.reader(pointcsv, delimiter=',')
                 for row in reader:
-                    if row[2] == "" or row[2].isspace():
-                        marker = 'x'
-                    else:
-                        marker = row[2]
 
-                    if row[3] == "" or row[3].isspace():
-                        point = (float(row[0]), float(row[1]), marker, None)
-                    else:
-                        point = (float(row[0]), float(row[1]), marker, row[3])
+                    point = (float(row[0]),
+                             float(row[1]),
+                             row[2] if len(row) > 2 else None,
+                             row[3] if len(row) > 3 else None,
+                             row[4] if len(row) > 4 else None,
+                             row[5] if len(row) > 5 else None)
                     points += [point]
         except Exception as err:
             raise err
 
-    kwargs = {}
+    # print(points)
+
+    if args.settings_file:
+        if ('default' in args.settings_file) and ('/' not in args.settings_file):
+            pass
+        try:
+            with open(args.settings_file, newline='') as settingsjson:
+                user_settings = json.load(settingsjson)
+        except Exception as err:
+            raise err
+    else:
+        user_settings = dict()
+
     if args.save_to_kmz:
-        kwargs.update({'save_to_kmz': True})
+        user_settings.update({'save_to_kmz': True})
 
     if args.pixel_value:
-        kwargs.update({'pixel_value': True})
+        user_settings.update({'pixel_value': True})
 
     if args.show_colorbar:
-        kwargs.update({'colorbar_visible': True})
+        user_settings.update({'colorbar_visible': True})
 
 
     input_files = sorted(glob.glob(f'{input_dir}*.nc'))
@@ -901,7 +871,7 @@ if __name__ == "__main__":
                                     points, 
                                     bbox, 
                                     args.composite, 
-                                    **kwargs)
+                                    **user_settings)
             else:
                 plot_single_band_goes(input_file_path, 
                                       save_dir, 
@@ -909,7 +879,7 @@ if __name__ == "__main__":
                                       points, 
                                       bbox, 
                                       pal, 
-                                      **kwargs)
+                                      **user_settings)
             progress.update()
 
     print("Done!")

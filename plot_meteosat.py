@@ -16,9 +16,9 @@ Used to set the style of any user input points shown on the map.
 POINT_STYLE is used for the point(s), and POINT_LABEL_STYLE is used for any
 point label(s) given. No labels are shown if POINT_LABEL_VISIBLE is False.
 '''
-POINT_STYLE = {'color': 'black', 'markersize': 8}
+POINT_STYLE = {'color': 'red', 'markersize': 8}
 POINT_LABEL_VISIBLE = True
-POINT_LABEL_STYLE = {'color': 'black', 'fontsize': 12}
+POINT_LABEL_STYLE = {'color': 'red', 'fontsize': 12}
 DRAW_LABEL_ARROWS = True
 
 
@@ -223,21 +223,21 @@ def plot_single_band_meteosat(file_path: str,
 
     #Bands 1-6 are output in "Reflectance Factor", from 0-1 and can be clip corrected
     #Bands 7-16 are output in "Brightness Temperature", and cannot be clip or gamma corrected
-    if band >= 7: 
+    if (band >= 7) or (kwargs.pop('force_radiance_temperature', False)) : 
         correct_clip = False
         correct_gamma = False
 
-        img_vmin = 210
-        img_vmax = 230
+        img_vmin = kwargs.pop('radiance_temperature_vmin', 180), 
+        img_vmax = kwargs.pop('radiance_temperature_vmax', 330), 
 
         cbar_label = "Radiance Temperature (K)"
 
-    else:
+    elif (band < 7) or (kwargs.pop('force_reflectance_factor', False)):
         correct_clip = True
         correct_gamma = True
 
-        img_vmin = 0
-        img_vmax = 1
+        img_vmin = kwargs.pop('reflectance_factor_vmin', 0), 
+        img_vmax = kwargs.pop('reflectance_factor_vmax', 1), 
 
         cbar_label = "Apparent Brightness"
 
@@ -260,7 +260,10 @@ def plot_single_band_meteosat(file_path: str,
     
     img = ax.imshow(img_data, 
               origin='upper',
-              extent=(img_extent[0], img_extent[2], img_extent[1], img_extent[3]),#(x.min().values, x.max().values, y.min().values, y.max().values),
+              extent=(img_extent[0], 
+                      img_extent[2], 
+                      img_extent[1], 
+                      img_extent[3]),
               transform=geog_data,
               interpolation='none',
               # vmin = 180,

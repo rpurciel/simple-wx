@@ -3,9 +3,9 @@ IMPLEMENTED VARIABLES AND DISPLAY TYPES:
 
     Shaded/Filled contours: 
     Cloud Cover ['cldcvr_cf'], Relative Humidity (%) ['rh_cf'], Wind Speed (kts) ['wind_cf'],
-    Vertical Velocity (ft/min) ['vv_cf']
+    Vertical Velocity (ft/min) ['vv_cf'], Temperature (°C) ['temp_cf']
 
-    Contours:
+    Contour Lines:
     Temperature (°C) ['temp_c'], Geopotential Height (m) ['gpm_c']
 
     Vectors:
@@ -33,27 +33,13 @@ SMOOTHING_PASSES = 1
 
 DEFAULT_LEVELS_TO_PLOT = [1000, 950, 900, 850, 700, 500, 300, 250]
 
+## Sort output plots into indivdual folders by level
+## (Default: True)
+SORT_PLOTS_BY_LEVEL = True
+
 ## Set the DPI of the saved output file
 ## (Default: 300)
-FILE_DPI = 300
-
-TOWN_SCALE_RANK = 14
-
-'''
-Used to set the style of any user input points shown on the map.
-POINT_STYLE is used for the point(s), and POINT_LABEL_STYLE is used for any
-point label(s) given. No labels are shown if POINT_LABEL_VISIBLE is False.
-'''
-POINT_STYLE = {'color': 'black', 'markersize': 8,}
-POINT_LABEL_VISIBLE = True
-DRAW_LABEL_ARROWS = True
-POINT_LABEL_STYLE = {'color': 'black', 'fontsize': 14}
-
-## Set the positioning of the labels relative to the points being plotted
-## (Default: X=0.2, Y=0.1)
-Y_LABEL_OFFSET = 0.3
-X_LABEL_OFFSET = 0
-
+FILE_DPI = 200
 
 
 
@@ -234,12 +220,7 @@ def plot_plan_view_hrrr(file_path: str,
     if points:
         plot_points(plt, ax,
                     points,
-                    x_label_offset=X_LABEL_OFFSET,
-                    y_label_offset=Y_LABEL_OFFSET,
-                    draw_labels=POINT_LABEL_VISIBLE,
-                    draw_arrows=DRAW_LABEL_ARROWS,
-                    point_style=POINT_STYLE,
-                    point_label_style=POINT_LABEL_STYLE)
+                    **kwargs)
 
     prod_titles = prodstr.split('#')
     if len(prod_titles[1:]) > 1:
@@ -250,13 +231,16 @@ def plot_plan_view_hrrr(file_path: str,
     titlestr = ", ".join(prod_titles)
     titlestr = titlestr[2:]
 
+    if SORT_PLOTS_BY_LEVEL:
+        save_dir = os.path.join(save_dir, f"{sel_level} Level")
+
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
     if kwargs.get('save_to_kmz'):
         file_name = "PlanView_" + str(sel_level) + filestr + "_" + file_day + "_" + file_time +"_HRRR"
         layer_name = f"HRRR Reanalysis at {np.datetime_as_string(data['valid_time'].values, timezone='UTC')[:-11].replace('T', ' ')} UTC"
         layer_desc = titlestr.replace('/\n', ' ') + f', at {sel_level} hPa level'
-        
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
 
         dest_path = os.path.join(save_dir, file_name + ".kmz")
 
@@ -276,7 +260,7 @@ def plot_plan_view_hrrr(file_path: str,
         plot_towns(ax, 
                    (bbox[2], bbox[3]),
                    (bbox[0], bbox[1]), 
-                   scale_rank=TOWN_SCALE_RANK)
+                   scale_rank=kwargs.pop('plot_towns_scale_rank', 5))
 
         draw_logo(ax)
         
@@ -284,10 +268,7 @@ def plot_plan_view_hrrr(file_path: str,
         ax.set_title(f'HRRR Reanalysis {titlestr}', loc='left', fontweight='bold', fontsize=15)
         plt.title(descstr, loc='right')
 
-        file_name = "PlanView_" + str(sel_level) + filestr + "_" + file_day + "_" + file_time +"_ERA5"
-        
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
+        file_name = "PlanView_" + str(sel_level) + filestr + "_" + file_day + "_" + file_time +"_HRRR"
 
         dest_path = os.path.join(save_dir, file_name + ".png")
 
@@ -369,12 +350,7 @@ def plot_plan_view_era5(file_path: str,
     if points:
         plot_points(plt, ax,
                     points,
-                    x_label_offset=X_LABEL_OFFSET,
-                    y_label_offset=Y_LABEL_OFFSET,
-                    draw_labels=POINT_LABEL_VISIBLE,
-                    draw_arrows=DRAW_LABEL_ARROWS,
-                    point_style=POINT_STYLE,
-                    point_label_style=POINT_LABEL_STYLE)
+                    **kwargs)
     
     prod_titles = prodstr.split('#')
     if len(prod_titles[1:]) > 1:
@@ -411,7 +387,7 @@ def plot_plan_view_era5(file_path: str,
         plot_towns(ax, 
                (bbox[2], bbox[3]),
                (bbox[0], bbox[1]), 
-               scale_rank=TOWN_SCALE_RANK)
+               scale_rank=kwargs.pop('plot_towns_scale_rank', 5))
 
         draw_logo(ax)
     
@@ -499,12 +475,7 @@ def plot_plan_view_wrf(file_path: str,
     if points:
         plot_points(plt, ax,
                     points,
-                    x_label_offset=X_LABEL_OFFSET,
-                    y_label_offset=Y_LABEL_OFFSET,
-                    draw_labels=POINT_LABEL_VISIBLE,
-                    draw_arrows=DRAW_LABEL_ARROWS,
-                    point_style=POINT_STYLE,
-                    point_label_style=POINT_LABEL_STYLE)
+                    **kwargs)
 
     prod_titles = prodstr.split('#')
     if len(prod_titles[1:]) > 1:
@@ -541,7 +512,7 @@ def plot_plan_view_wrf(file_path: str,
         plot_towns(ax, 
                    (bbox[2], bbox[3]),
                    (bbox[0], bbox[1]), 
-                   scale_rank=TOWN_SCALE_RANK)
+                   scale_rank=kwargs.pop('plot_towns_scale_rank', 5))
 
         draw_logo(ax)
         
@@ -549,7 +520,7 @@ def plot_plan_view_wrf(file_path: str,
         ax.set_title(f'HRRR Reanalysis {titlestr}', loc='left', fontweight='bold', fontsize=15)
         plt.title(descstr, loc='right')
 
-        file_name = "PlanView_" + str(sel_level) + filestr + "_" + file_day + "_" + file_time +"_ERA5"
+        file_name = "PlanView_" + str(sel_level) + filestr + "_" + file_day + "_" + file_time +"_HRRR"
         
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
@@ -583,7 +554,6 @@ def draw_surface_products(fig: mpl.figure.Figure,
 
     if model == 'hrrr':
         vtable = HRRR_VARIABLE_TABLE
-
         lat = data.variables['latitude'][:]
         lon = data.variables['longitude'][:]
     elif model == 'era5':
@@ -780,6 +750,44 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
         lat = data.variables['latitude'][:]
         lon = data.variables['longitude'][:]
 
+    if "temp_cf" in products:
+        levels = np.arange(kwargs.pop('temp_level_min', -30 if sel_level > 500 else -70),
+                           kwargs.pop('temp_level_max', 45 if sel_level > 500 else 20),
+                           kwargs.pop('temp_level_step', 2))
+
+        if VARIABLE_SMOOTHING == True:
+
+            var_contourf = ax.contourf(lon, lat, 
+                                       smooth_n_point(data.variables[vtable['temp']][:] - 273.15,
+                                                      SMOOTHING_POINTS,
+                                                      SMOOTHING_PASSES), 
+                                       levels=levels, 
+                                       transform=crs.PlateCarree(), 
+                                       cmap=kwargs.pop('temp_pallete', cm.Spectral_r), 
+                                       vmin=levels.min(),
+                                       vmax=levels.max(),
+                                       extend='both',
+                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
+        else:
+            var_contourf = ax.contourf(lon, lat, 
+                                       data.variables[vtable['temp']][:] - 273.15, 
+                                       levels=levels, 
+                                       transform=crs.PlateCarree(), 
+                                       cmap=kwargs.pop('temp_pallete', cm.Spectral_r), 
+                                       vmin=levels.min(),
+                                       vmax=levels.max(),
+                                       extend='both',
+                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
+        cb = cb_fig.colorbar(var_contourf, 
+                          ax=ax, 
+                          cax=cb_ax,
+                          ticks=levels[::2], 
+                          orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
+                          shrink=0.77)
+        cb.set_label('Temperature (°C)', size='x-large', **cbar_opts)
+
+        prodstr += "#Temperature (°C, shaded contours)"
+        prodabbr += "_T"
 
     if "cldcvr_cf" in products:
         levels = np.arange(kwargs.pop('cldcvr_level_min', 0),
@@ -1030,8 +1038,11 @@ def draw_wind_display(fig: mpl.figure.Figure,
         lat = data.variables['latitude'][:]
         lon = data.variables['longitude'][:]
 
-    ukt = data[vtable['u']]
-    vkt = data[vtable['v']]
+    u = data[vtable['u']]
+    v = data[vtable['v']]
+
+    ukt = u.metpy.convert_units('knots')
+    vkt = v.metpy.convert_units('knots')
 
     wind_speed = mpcalc.wind_speed(data[vtable['u']], data[vtable['v']]).metpy.convert_units('knots')
 
@@ -1128,9 +1139,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=f'Plot GOES 16/17/18 GLM Data, either for single time periods or cumulative over all input data.')
     parser.add_argument('--level-range', 
                         help=f'specify range of levels to plot. default: {DEFAULT_LEVELS_TO_PLOT}', 
-                        nargs=2, 
+                        nargs=3, 
                         type=int,
-                        metavar=('max', 'min'),
+                        metavar=('max', 'min', 'step'),
                         dest='levels_range',
                         default=None)
     parser.add_argument('--bbox', 
@@ -1210,7 +1221,7 @@ if __name__ == "__main__":
     print(save_dir)
 
     if args.levels_range:
-        plot_levels = range(args.levels_range[1], args.levels_range[0]+25, 25)
+        plot_levels = range(args.levels_range[1], args.levels_range[0]+args.levels_range[2], args.levels_range[2])
     else:
         plot_levels = DEFAULT_LEVELS_TO_PLOT
     num_levels = len(plot_levels)
@@ -1227,22 +1238,19 @@ if __name__ == "__main__":
     if args.save_to_kmz:
         user_settings.update({'save_to_kmz': True})
 
-
     points = []
     if args.points_file:
         try:
             with open(args.points_file, newline='') as pointcsv:
                 reader = csv.reader(pointcsv, delimiter=',')
                 for row in reader:
-                    if row[2] == "" or row[2].isspace():
-                        marker = 'x'
-                    else:
-                        marker = row[2]
 
-                    if row[3] == "" or row[3].isspace():
-                        point = (float(row[0]), float(row[1]), marker, None)
-                    else:
-                        point = (float(row[0]), float(row[1]), marker, row[3])
+                    point = (float(row[0]),
+                             float(row[1]),
+                             row[2] if len(row) > 2 else None,
+                             row[3] if len(row) > 3 else None,
+                             row[4] if len(row) > 4 else None,
+                             row[5] if len(row) > 5 else None)
                     points += [point]
         except Exception as err:
             raise err

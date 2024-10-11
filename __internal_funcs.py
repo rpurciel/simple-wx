@@ -4,6 +4,7 @@ from typing import Any
 from collections.abc import Callable
 from uuid import uuid4
 from glob import glob 
+import requests
 
 import numpy as np
 import pandas as pd
@@ -18,6 +19,25 @@ import cartopy.feature as cfeature
 import cartopy.io.shapereader as shpreader
 from cartopy.feature import NaturalEarthFeature
 from adjustText import adjust_text 
+
+GEONAMES_USERNAME = 'rpurciel'
+
+def get_nearest_feature(lat: float,
+                        lon: float,
+                        feature_code: str = 'PPL',
+                        show_distance: bool = True):
+
+    keys = {'lat': lat, 'lng': lon, 'username': GEONAMES_USERNAME, 'featureCode': feature_code}
+
+    r = requests.get('http://api.geonames.org/findNearbyJSON', params=keys)
+    params = r.json()['geonames'][0]
+
+    state_code = params['adminCode1']
+    if show_distance:
+        loc = f"{params['distance']} km from {params['name']}{f', {state_code}, ' if state_code is not None else ', '}{params['countryCode']}"
+    else:
+        loc = f"Near {params['name']}{f', {state_code}, ' if state_code is not None else ', '}{params['countryCode']}"
+    return loc
 
 def make_highly_visible(plt: mpl.figure.Figure,
                         obj: mpl.artist.Artist,
@@ -53,65 +73,66 @@ def make_highly_visible(plt: mpl.figure.Figure,
 
 def plot_points(plt: mpl.figure.Figure,
                 ax: mpl.axes.Axes | cartopy.mpl.geoaxes.GeoAxes, 
-                points: list[tuple[float, float, str, str], ...],
-                point_style: dict,
-                point_label_style: dict,
-                draw_labels: bool = True,
-                draw_arrows: bool = True,
-                x_label_offset: float = 0,
-                y_label_offset: float = 0,
+                points: list[tuple[float, float, str, str, float, float], ...],
                 transform: cartopy.crs = ccrs.PlateCarree(), 
-                zorder: int = 30) -> tuple[list, list]:
+                default_marker: str = '.',
+                default_label: str = None,
+                default_x_offset: float = 0,
+                default_y_offset: float = 0,
+                zorder: int = 30,
+                **kwargs) -> tuple[list, list]:
 
     input_pts = []
     input_pt_labels = []
     for point in points:
         x_axis = point[0]
         y_axis = point[1]
-        marker = point[2]
-        label = point[3]
+        marker = point[2] if point[2] is not None else default_marker
+        label = point[3] if point[3] is not None else default_label
+        x_offset = point[4] if point[4] is not None else default_x_offset
+        y_offset = point[5] if point[5] is not None else default_y_offset
         
         pt = ax.plot([y_axis],[x_axis], 
                      marker=marker, 
                      linestyle='none',
+                     color=kwargs.get("point_color", "black"),
                      zorder=zorder)
 
         input_pts += [pt]
        
-        if (draw_labels) and (label is not None):
-            if draw_arrows:
-                if "Summit" in label:
-                    y_label_offset = -0.5
-                    x_label_offset = 0.5
+        if (kwargs.get("point_draw_labels", True)) and (label is not None):
+            if kwargs.get("point_draw_arrows", True):
                 pt_label = ax.annotate(label, 
                                        xy=(y_axis, x_axis),
-                                       xytext=(y_axis+x_label_offset, x_axis+y_label_offset), 
-                                       horizontalalignment='right', 
-                                       verticalalignment='top',
-                                       fontsize=12,
-                                       color=point_label_style['color'],
+                                       xytext=(y_axis+float(x_offset), x_axis+float(y_offset)), 
+                                       horizontalalignment=kwargs.get("point_label_horizontal_alignment", "right"), 
+                                       verticalalignment=kwargs.get("point_label_vertical_alignment", "top"),
+                                       fontsize=kwargs.get("point_label_fontsize", 12),
+                                       color=kwargs.get("point_label_color", "black"),
                                        arrowprops=dict(arrowstyle='->', 
-                                                       color=point_label_style['color']), 
+                                                       color=kwargs.get("point_label_color", "black")), 
                                        transform=transform,
                                        annotation_clip=True, 
                                        zorder=zorder)
-                # make_highly_visible(plt, pt_label)
+                if kwargs.get("point_label_high_vis", False):
+                    make_highly_visible(plt, pt_label)
             else:
                 pt_label = ax.annotate(label, 
                                        xy=(y_axis, x_axis),
-                                       xytext=(y_axis+x_label_offset, x_axis+y_label_offset), 
-                                       horizontalalignment='right', 
-                                       verticalalignment='top',
+                                       xytext=(y_axis+float(y_offset), x_axis+float(x_offset)), 
+                                       horizontalalignment=kwargs.get("point_label_horizontal_alignment", "right"), 
+                                       verticalalignment=kwargs.get("point_label_vertical_alignment", "top"),
+                                       fontsize=kwargs.get("point_label_fontsize", 12),
+                                       color=kwargs.get("point_label_color", "black"),
                                        transform=transform,
                                        annotation_clip=True, 
                                        zorder=zorder)
-                # make_highly_visible(plt, pt_label)
+                if kwargs.get("point_label_high_vis", False):
+                    make_highly_visible(plt, pt_label)
             input_pt_labels = [pt_label]
 
-
-    mpl.artist.setp(input_pts, **point_style)
-    mpl.artist.setp(input_pt_labels, **point_label_style)
-    adjust_text(input_pt_labels)
+    if kwargs.get("point_label_autoadjust_pos", False): #can create wierd behavior when specifying point label positions manually
+        adjust_text(input_pt_labels)
 
     return (input_pts, input_pt_labels)
 
@@ -472,7 +493,7 @@ def save_figs_to_kml(save_path: str,
 def generate_verification_plot(lat: float | list[float, ...], 
                                lon: float | list[float, ...], 
                                save_dir: str,
-                               extent_factor: int = 5) -> None:
+                               extent_factor: int = None) -> None:
     """
     This function generates a plot of the input lat lon,
     to be used for verification of the input location.
@@ -502,15 +523,27 @@ def generate_verification_plot(lat: float | list[float, ...],
     ax = plt.axes(projection = ccrs.PlateCarree())
 
     if (type(lat) or type(lon)) is list:
-        extent = [float(lon[len(lon)-1])-extent_factor,
-                  float(lon[len(lon)-1])+extent_factor,
-                  float(lat[len(lat)-1])-extent_factor,
-                  float(lat[len(lat)-1])+extent_factor]
+
+        lon_dist = np.abs(max(lon) - min(lon))
+        lat_dist = np.abs(max(lat) - min(lat))
+
+        rad_max = lon_dist if lon_dist >= lat_dist else lat_dist
+        fact = (rad_max + rad_max * 0.05) if extent_factor is None else extent_factor
+
+        center_lat = np.mean(lat)
+        center_lon = np.mean(lon)
+
+        extent = [center_lon-fact,
+                  center_lon+fact,
+                  center_lat-fact,
+                  center_lat+fact]
     else:
-        extent = [float(lon)-extent_factor,
-                  float(lon)+extent_factor,
-                  float(lat)-extent_factor,
-                  float(lat)+extent_factor]
+        fact = 0.5 if extent_factor is None else extent_factor
+
+        extent = [float(lon)-fact,
+                  float(lon)+fact,
+                  float(lat)-fact,
+                  float(lat)+fact]
 
     ax.set_extent(extent, crs=ccrs.PlateCarree())
     states = NaturalEarthFeature(category="cultural", scale="50m",

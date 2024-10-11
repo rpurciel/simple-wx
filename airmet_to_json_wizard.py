@@ -24,7 +24,8 @@ def process_string(string: str,
         if "CSTLWTRS" in list:
             list[list.index("CSTLWTRS")] = "CSTL WTRS"
     elif type == "vors":
-        if "-" in string             string = string.replace("FROM ", "")
+        if "-" in string:
+            string = string.replace("FROM ", "")
             list = string.split("-")
         else:
             string = string.replace("FROM ", "")
