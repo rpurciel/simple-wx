@@ -20,7 +20,7 @@
 |`plot_himawari.py`| Clean code, add in addl. composites |
 |`plot_meteosat.py`|Clean code, add in addl. composites |
 |`plot_plan_view.py`| Model support (GFS/WRF/+), surface-level support, addl. variables |
-|`plot_radar.py`| 
+|`plot_radar.py`| Variable suppport | 
 
 ## Downloading Scripts
 
