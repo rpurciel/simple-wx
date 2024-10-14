@@ -22,6 +22,8 @@
 |`plot_plan_view.py`| Model support (GFS/WRF/+), surface-level support, addl. variables |
 |`plot_radar.py`| Variable suppport | 
 
+</details>
+
 ## Downloading Scripts
 
 <details>
