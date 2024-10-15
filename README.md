@@ -5,22 +5,22 @@
 
 | Script | Next Goal | Completeness | % 
 |---|---|---|---|
-|`airmet_to_json_wizard.py`| Clean code
-|`create_meteogram_data.py`| Model support (ERA5/GFS/WRF/+), other variables, clean code |
-|`create_movie.py`| Clean code |
-|`create_raob_sounding.py`| Model support (GFS/WRF/+), clean code |
-|`create_sun_moon_pos_table.py`| Elevation support |
-|`create_twilight_times_listing.py`| Elevation support |
-|`download_aws.py`| Clean code, model forecast data support |
-|`download_eumetsat_from_cart.py`| Clean code |
-|`plot_airmet.py`| Clean code, make more general purpose (CSIGs, etc) |
-|`plot_cross_section.py`| Build functionality |
-|`plot_glm.py`| Clean code |
-|`plot_goes.py`| Clean code, add in addl. composites |
-|`plot_himawari.py`| Clean code, add in addl. composites |
-|`plot_meteosat.py`|Clean code, add in addl. composites |
-|`plot_plan_view.py`| Model support (GFS/WRF/+), surface-level support, addl. variables |
-|`plot_radar.py`| Variable suppport | 
+|`airmet_to_json_wizard.py`| Clean code | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ | 90% |
+|`create_meteogram_data.py`| Model support (ERA5/GFS/WRF/+), other variables, clean code | 🟩🟩🟩🟩🟩⬜⬜⬜⬜⬜ | 50% |
+|`create_movie.py`| Clean code, options for more video formats | 🟩🟩🟩🟩🟩🟩🟩⬜⬜⬜ | 70% |
+|`create_raob_sounding.py`| Model support (GFS/WRF/+), clean code | 🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜ | 40% |
+|`create_sun_moon_pos_table.py`| Elevation support | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ | 90% |
+|`create_twilight_times_listing.py`| Elevation support, clean code | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ | 90% |
+|`download_aws.py`| Clean code, model forecast data support | 🟩🟩🟩🟩🟩🟩🟩⬜⬜⬜ | 70% |
+|`download_eumetsat_from_cart.py`| Clean code | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ | 80% |
+|`plot_airmet.py`| Clean code, make more general purpose (CSIGs, etc) | 🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜ | 40% |
+|`plot_cross_section.py`| Build functionality | 🟩⬜⬜⬜⬜⬜⬜⬜⬜⬜ | 10% |
+|`plot_glm.py`| Clean code, update | 🟩🟩🟩🟩🟩🟩🟩⬜⬜⬜ | 70% |
+|`plot_goes.py`| Clean code, add in addl. composites | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ | 80% |
+|`plot_himawari.py`| Clean code, add in addl. composites | 🟩🟩🟩🟩🟩🟩🟩⬜⬜⬜ | 70% |
+|`plot_meteosat.py`| Clean code, add in addl. composites | 🟩🟩🟩🟩🟩🟩🟩⬜⬜⬜ | 70% |
+|`plot_plan_view.py`| Model support (GFS/WRF/+), surface-level support, addl. variables | 🟩🟩🟩🟩🟩⬜⬜⬜⬜⬜ | 50% |
+|`plot_radar.py`| Variable suppport | 🟩🟩🟩🟩🟩🟩⬜⬜⬜⬜ | 60% |
 
 </details>
 
