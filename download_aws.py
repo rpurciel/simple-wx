@@ -21,11 +21,11 @@ from tqdm.auto import tqdm
 from tqdm.contrib.concurrent import process_map, thread_map
 
 def aws_download_multithread_worker(save_dir: str, 
-                         bucket: str,
-                         boto3: boto3.resource, 
-                         s3_file: str,
-                         file_name: str, 
-                         progress_pos: int):
+                                    bucket: str,
+                                    boto3: boto3.resource, 
+                                    s3_file: str,
+                                    file_name: str, 
+                                    progress_pos: int) -> None:
 
     file_size = int(boto3.Object(bucket, s3_file).content_length)
     pretty_file_name = os.path.basename(s3_file)
@@ -39,7 +39,10 @@ def aws_download_multithread_worker(save_dir: str,
     except Exception as e:
         print(e)
 
-def aws_download_multithread(save_dir, bucket, keys, file_names):
+def aws_download_multithread(save_dir: str, 
+                             bucket: str, 
+                             keys: list[str, ...], 
+                             file_names: list[str, ...]) -> None:
     '''
     Thin wrapper for multithreaded downloading.
     '''
@@ -52,13 +55,16 @@ def aws_download_multithread(save_dir, bucket, keys, file_names):
     tqdm.set_lock(TRLock())
     try:
         with ThreadPoolExecutor(initializer=tqdm.set_lock, initargs=(tqdm.get_lock(),)) as executor:
-            executor.map(partial(aws_download_multithread_worker, save_dir, bucket, boto3_client), keys, file_names, range(1, len(keys)+1, 1))
+            executor.map(partial(aws_download_multithread_worker, save_dir, bucket, boto3_client), 
+                         keys, 
+                         file_names, 
+                         range(1, len(keys)+1, 1))
     except Exception as e:
         print(e)
 
 def list_aws_keys(bucket: str, 
-                   key_pattern: str,
-                   glob_match=False):
+                  key_pattern: str,
+                  glob_match: bool = False):
     '''
     Function to find valid s3 files based on a bucket name and a key pattern.
     Allows for unix-style glob matching.
@@ -89,17 +95,39 @@ def list_aws_keys(bucket: str,
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description=f'Download weather data from multiple sources on AWS')
-    parser.add_argument('-s', '--satellite',
+    parser.add_argument('--satellite',
                         help='download specified satellite',
-                        choices=['goes16', 'goes17', 'goes18', 'goes16-glm', 'goes17-glm', 'goes18-glm', 'hw8', 'hw9'],
+                        choices=['goes16', 
+                                 'goes17', 
+                                 'goes18', 
+                                 'goes16-glm', 
+                                 'goes17-glm', 
+                                 'goes18-glm', 
+                                 'himawari8', 
+                                 'himawari9'],
                         type=str,
                         default=None)
-    parser.add_argument('-m', '--model', 
+    parser.add_argument('--model', 
                         help='download specified model', 
-                        choices=['gfs-anl', 'hrrr-anl', 'hrrrak-anl'], 
+                        choices=['gfs-anl', 
+                                 'hrrr-anl', 
+                                 'hrrr-anl-ak', 
+                                 'nam-anl', 
+                                 'nam-anl-ak', 
+                                 'nam-anl-hi', 
+                                 'nam-anl-pr', 
+                                 'nam-anl-fw', 
+                                 'gfs-fcst',
+                                 'hrrr-fcst', 
+                                 'hrrr-fcst-ak', 
+                                 'nam-fcst',
+                                 'nam-fcst-ak',
+                                 'nam-fcst-hi',
+                                 'nam-fcst-pr',
+                                 'nam-fcst-fw'], 
                         type=str,
                         default=None)
-    parser.add_argument('-r', '--radar',
+    parser.add_argument('--radar',
                         help='download data from specified radar (or "mrms" for MRMS data)',
                         type=str,
                         metavar=('XXXX'),
@@ -149,7 +177,7 @@ if __name__ == "__main__":
                 product = "goes"
                 bucket = f"noaa-{sel_sat}"
                 dl_freq = '1h'
-        if "hw" in sel_sat:
+        if "himawari" in sel_sat:
             product = "hw"
             bucket = f"noaa-himawari{sel_sat[-1:]}"
             dl_freq = '10min'
@@ -161,7 +189,9 @@ if __name__ == "__main__":
         if "hrrr" in sel_model:
             bucket = "noaa-hrrr-bdp-pds"
             dl_freq = '1h'
-            max_fcst = 48 
+        if "nam" in sel_model:
+            bucket = "noaa-nam-pds"
+            dl_freq = '1h'
 
     elif args.radar:
         if (args.radar == "mrms") or (args.radar == "MRMS"):
@@ -194,19 +224,25 @@ if __name__ == "__main__":
         end_ts = main_ts + delta
 
         dl_range = pd.period_range(start_ts.to_period(dl_freq), end_ts.to_period(dl_freq))
-        print(dl_range)
     else:
         raise ValueError("Please specify either start/end time bounds or a 'time around' a specified time.")
 
     keys = []
     file_names = []
-    # initial_hr = None
-    # hr_idx = 0
+    init_ts = None
+    stop_pop_flag = False
+
+    if "fcst" in product:
+        req_fcst_len = len(dl_range)
+        current_fcst_hr = 0
+        print(f"Requesting (up to) {req_fcst_len} hours of forecast data, initalized at {start_ts.strftime('%y-%m-%d %H:%M:%S')}.")
+
     with tqdm(miniters=0, total=len(dl_range), desc=f"Indexing '{bucket}' for requested data...", ascii=" 123456789#") as progress:
         for time in dl_range:
+            if not init_ts:
+                init_ts = time.to_timestamp()
+
             this_ts = time.to_timestamp()
-            # if not initial_hr:
-            #     initial_hr = this_ts.hour
 
             if product == "goes":
                 protokey = f"ABI-L2-MCMIPC/{str(this_ts.year).zfill(4)}/{str(this_ts.day_of_year).zfill(3)}/{str(this_ts.hour).zfill(2)}/*"
@@ -227,8 +263,17 @@ if __name__ == "__main__":
                     keys += [file]
                     file_names += [file[file.rfind('/')+1:]]
 
-            elif product == "hrrr-anl":
-                protokey = f'hrrr.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}/conus/*wrfprsf*'
+            elif "hrrr" in product:
+                if "ak" in product:
+                    file_id = "alaska"
+                else:
+                    file_id = "conus"
+
+                if "fcst" in product:
+                     protokey = f'hrrr.{str(init_ts.year).zfill(4)}{str(init_ts.month).zfill(2)}{str(init_ts.day).zfill(2)}/{file_id}/*wrfprsf*'
+                else:
+                    protokey = f'hrrr.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}/{file_id}/*wrfprsf*'
+
                 files = list_aws_keys(bucket, protokey, glob_match=True)
                 for file in files:
                     if 'idx' in file:
@@ -240,13 +285,27 @@ if __name__ == "__main__":
                     file_hrstr = file_name[file_name.find('.'):file_name.find('.')+file_name[file_name.find('.')+1:].find(".")+1]
                     file_hr = int(file_hrstr[2:4])
 
-                    file_fcsthr = int(file_name[file_name.find('wrfprsf')+7:file_name.rfind('.')])
+                    file_fcsthr = int(file_name[file_name.find('wrfprsf')+7:file_name.rfind('.')][:2])
 
-                    if (file_hr == this_ts.hour) and (file_fcsthr == 0):
-                        keys += [file]
-                        file_names += [file[file.rfind('/')+1:].replace("hrrr.",f"hrrr.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}.")]
-            elif product == "hrrrak-anl":
-                protokey = f'hrrr.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}/alaska/*wrfprsf*'
+                    if "fcst" in product:
+                        if (file_hr == init_ts.hour) and (file_fcsthr == current_fcst_hr):
+                            keys += [file]
+                            file_names += [file[file.rfind('/')+1:].replace("hrrr.",f"hrrr.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}.")]
+                            current_fcst_hr += 1
+
+                            if current_fcst_hr == req_fcst_len:
+                                stop_pop_flag = True
+                                break
+                    else:
+                        if (file_hr == this_ts.hour) and (file_fcsthr == 0):
+                            keys += [file]
+                            file_names += [file[file.rfind('/')+1:].replace("hrrr.",f"hrrr.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}.")]
+
+            elif "gfs" in product:
+                if "fcst" in product:
+                    protokey = f'gfs.{str(init_ts.year).zfill(4)}{str(init_ts.month).zfill(2)}{str(init_ts.day).zfill(2)}/{str(init_ts.hour).zfill(2)}/atmos/*.pgrb2.0p25.f*'
+                else:
+                    protokey = f'gfs.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}/{str(this_ts.hour).zfill(2)}/atmos/*.pgrb2.0p25.anl'
                 files = list_aws_keys(bucket, protokey, glob_match=True)
                 for file in files:
                     if 'idx' in file:
@@ -258,13 +317,45 @@ if __name__ == "__main__":
                     file_hrstr = file_name[file_name.find('.'):file_name.find('.')+file_name[file_name.find('.')+1:].find(".")+1]
                     file_hr = int(file_hrstr[2:4])
 
-                    file_fcsthr = int(file_name[file_name.find('wrfprsf')+7:file_name.rfind('.')-3])
+                    if "fcst" in product:
+                        file_fcsthr = int(file_name[file_name.rfind('f')+1:])
+                        if (file_hr == init_ts.hour) and (file_fcsthr == current_fcst_hr):
+                            keys += [file]
+                            file_names += [file[file.rfind('/')+1:].replace("gfs.",f"gfs.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}.")]
 
-                    if (file_hr == this_ts.hour) and (file_fcsthr == 0):
-                        keys += [file]
-                        file_names += [file[file.rfind('/')+1:].replace("hrrr.",f"hrrr.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}.")]
-            elif product == "gfs-anl":
-                protokey = f'gfs.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}/{str(this_ts.hour).zfill(2)}/atmos/*.pgrb2.0p25.anl'
+                            #GFS goes from 1-hourly resolution to 3-hourly resolution at >120 forecast hours
+                            if current_fcst_hr < 120:
+                                current_fcst_hr += 1
+                            else:
+                                current_fcst_hr += 3
+
+                            if current_fcst_hr >= req_fcst_len:
+                                stop_pop_flag = True
+                                break
+
+                    else:
+                        if (file_hr == this_ts.hour):
+                            keys += [file]
+                            file_names += [file[file.rfind('/')+1:].replace("gfs.",f"gfs.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}.")]
+
+
+            elif "nam" in product:
+                if "ak" in product:
+                    file_id = "alaskanest"
+                elif "hi" in product:
+                    file_id = "hawaiinest"
+                elif "pr" in product:
+                    file_id = "priconest"
+                elif "fw" in product:
+                    file_id = "firewxnest"
+                else:
+                    file_id = "conusnest"
+
+                if "fcst" in product:
+                    protokey = f'nam.{str(init_ts.year).zfill(4)}{str(init_ts.month).zfill(2)}{str(init_ts.day).zfill(2)}/*{file_id}.hiresf*'
+                else:
+                    protokey = f'nam.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}/*{file_id}.hiresf*'
+
                 files = list_aws_keys(bucket, protokey, glob_match=True)
                 for file in files:
                     if 'idx' in file:
@@ -276,35 +367,21 @@ if __name__ == "__main__":
                     file_hrstr = file_name[file_name.find('.'):file_name.find('.')+file_name[file_name.find('.')+1:].find(".")+1]
                     file_hr = int(file_hrstr[2:4])
 
-                    if (file_hr == this_ts.hour):
-                        keys += [file]
-                        file_names += [file[file.rfind('/')+1:].replace("gfs.",f"gfs.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}.")]
+                    file_fcsthr = int(file_name[file_name.find('hiresf')+6:file_name.rfind('.')-5])
 
+                    if "fcst" in product:
+                        if (file_hr == init_ts.hour) and (file_fcsthr == current_fcst_hr):
+                            keys += [file]
+                            file_names += [file[file.rfind('/')+1:].replace("nam.",f"nam.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}.")]
+                            current_fcst_hr += 1
 
-            # elif product == "hrrr-fcst":
-            #     protokey = f'hrrr.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}/conus/*wrfprsf*'
-            #     files = list_aws_keys(bucket, protokey, glob_match=True)
-            #     for file in files:
-            #         #advanced filtering to get hourly resolution
-            #         if 'idx' in file:
-            #             continue
-
-            #         print(file)
-            #         #advanced filtering to get hourly resolution
-            #         file_name = file[file.rfind('/')+1:]
-            #         print(file_name)
-
-            #         file_hrstr = file_name[file_name.find('.'):file_name.find('.')+file_name[file_name.find('.')+1:].find(".")+1]
-            #         file_hr = int(file_hrstr[2:4])
-            #         print(file_hr)
-
-            #         file_fcsthr = int(file_name[file_name.find('wrfprsf')+7:file_name.rfind('.')])
-            #         print(file_fcsthr)
-
-            #         if (file_hr == initial_hr) and (file_fcsthr == hr_idx):
-            #             keys += [file]
-            #             file_names += [file[file.rfind('/')+1:]]
-            #             hr_idx += 1
+                            if current_fcst_hr == req_fcst_len:
+                                stop_pop_flag = True
+                                break
+                    else:
+                        if (file_hr == this_ts.hour) and (file_fcsthr == 0):
+                            keys += [file]
+                            file_names += [file[file.rfind('/')+1:].replace("nam.",f"nam.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}.")]
 
             elif product == "nexrad-l2":
                 protokey = f'{str(this_ts.year).zfill(4)}/{str(this_ts.month).zfill(2)}/{str(this_ts.day).zfill(2)}/{radar_id.upper()}/*'
@@ -334,13 +411,15 @@ if __name__ == "__main__":
                         keys += [file]
                         file_names += [file[file.rfind('/')+1:]]
 
-            # if hr_idx > max_fcst:
-            #     warnings.warn("Max forecast length reached, finishing population...")
-            #     break
+
+
+            if stop_pop_flag:
+                progress.update(len(dl_range))
+                break
             progress.update()
 
     if (not keys) or (not file_names):
-        raise FileNotFoundError("No files found on AWS. Try reviewing input parameters.")
+        raise FileNotFoundError("No files found on AWS. Try reviewing input parameters, or change start time for forecast data.")
     else:
         print(f'{len(keys)} files found. Starting download...')
 

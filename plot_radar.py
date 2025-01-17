@@ -211,10 +211,10 @@ def plot_nexrad_l2(file_path: str,
                      fontweight='bold', 
                      fontsize=15)
 
-        ax.set_title(f"{round(sel_sweep_ang, 1)}° Beam Angle\n{scan_time.strftime('%d %B %Y %H:%M:%S UTC')}", 
+        ax.set_title(f"{str(round(sel_sweep_ang, 1))}° Beam Angle\n{scan_time.strftime('%d %B %Y %H:%M:%S UTC')}", 
                      loc='right')
         
-        file_name = f"{radar_id}_{str(round(sel_sweep_ang, 1)).replace('.','_')}degScan_{scan_time.strftime('%Y%m%d_%H%M%S%Z')}"
+        file_name = f"{radar_id}_{str(round(sel_sweep_ang, 1)).replace('.','_')}degScan_no{sel_sweep_idx}_{scan_time.strftime('%Y%m%d_%H%M%S%Z')}"
         
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
@@ -483,7 +483,7 @@ if __name__ == "__main__":
                                bbox,
                                args.rad_prod if args.rad_prod else "reflectivity",
                                int(args.rad_sa_idx) if args.rad_sa_idx else None,
-                               float(args.rad_sa) if args.rad_sa else 0.5,
+                               float(args.rad_sa) if args.rad_sa else None,
                                **user_settings)
             progress.update()
 

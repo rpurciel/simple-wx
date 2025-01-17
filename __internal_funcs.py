@@ -8,6 +8,7 @@ import requests
 
 import numpy as np
 import pandas as pd
+import xarray as xr
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
@@ -22,6 +23,56 @@ from adjustText import adjust_text
 
 GEONAMES_USERNAME = 'rpurciel'
 
+def destag_variable(stag_var: xr.DataArray, 
+                    *,
+                    stag_dim_name: str = None) -> xr.DataArray:
+    """
+    Destagger a WRF variable. Can either automatically
+    find the staggered dimensions or a staggered dimension
+    can be specified via 'stag_dm_name'.
+
+    Inputs
+        - stag_var, xarray.DataArray: 
+                An Xarray DataArray for a variable staggered
+                on the WRF mass grid.
+        - stag_dim_name, str [optional, def. None]:
+                If the staggered dimension's name is known,
+                it can be manually selected. Otherwise, 
+                dimension is selected based on patterns.
+
+    Returns
+        An Xarray DataArray, destaggered if it was staggered
+        on the WRF mass grid. If no dimensions are staggered
+        or if wrfpython does not recognize the data, the 
+        input DataArray is returned.
+    """
+
+    from wrf import destagger
+
+    dims = stag_var.dims
+    stag_dim_idx = None
+
+    if stag_dim_name:
+        stag_dim_idx = dims.index(stag_dim_name)
+    else:
+        for dim in dims:
+            if "stag" in dim:
+                stag_dim_idx = dims.index(dim)
+
+    if not stag_dim_idx:
+        return stag_var
+    else:        
+        try:
+            destag_var = destagger(stag_var, 
+                                   stag_dim_idx,
+                                   meta=True)
+        except:
+            return stag_var
+
+        destag_var = destag_var.assign_coords(stag_var.coords)
+
+        return destag_var
+
 def get_nearest_feature(lat: float,
                         lon: float,
                         feature_code: str = 'PPL',
@@ -30,13 +81,16 @@ def get_nearest_feature(lat: float,
     keys = {'lat': lat, 'lng': lon, 'username': GEONAMES_USERNAME, 'featureCode': feature_code}
 
     r = requests.get('http://api.geonames.org/findNearbyJSON', params=keys)
-    params = r.json()['geonames'][0]
+    try:
+        params = r.json()['geonames'][0]
+    except:
+        return "No distinguising features nearby"
 
     state_code = params['adminCode1']
     if show_distance:
-        loc = f"{params['distance']} km from {params['name']}{f', {state_code}, ' if state_code is not None else ', '}{params['countryCode']}"
+        loc = f"{round(float(params['distance']), 2)} km from {params['name']}{f', {state_code}, ' if state_code is not None else ', '}{params['countryName']}"
     else:
-        loc = f"Near {params['name']}{f', {state_code}, ' if state_code is not None else ', '}{params['countryCode']}"
+        loc = f"Near {params['name']}{f', {state_code}, ' if state_code is not None else ', '}{params['countryName']}"
     return loc
 
 def make_highly_visible(plt: mpl.figure.Figure,
@@ -95,7 +149,9 @@ def plot_points(plt: mpl.figure.Figure,
         pt = ax.plot([y_axis],[x_axis], 
                      marker=marker, 
                      linestyle='none',
-                     color=kwargs.get("point_color", "black"),
+                     markerfacecolor=kwargs.get("point_color", "black"),
+                     markeredgecolor=kwargs.get("point_edge_color", "black"),
+                     markersize=kwargs.get("point_size", 8),
                      zorder=zorder)
 
         input_pts += [pt]

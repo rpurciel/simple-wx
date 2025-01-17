@@ -31,7 +31,7 @@ SMOOTHING_POINTS = 9
 ## (Default: 1)
 SMOOTHING_PASSES = 1
 
-DEFAULT_LEVELS_TO_PLOT = [1000, 950, 900, 850, 700, 500, 300, 250]
+DEFAULT_LEVELS_TO_PLOT = [9999]#[1000, 950, 900, 850, 700, 500, 300, 250]
 
 ## Sort output plots into indivdual folders by level
 ## (Default: True)
@@ -40,7 +40,6 @@ SORT_PLOTS_BY_LEVEL = True
 ## Set the DPI of the saved output file
 ## (Default: 300)
 FILE_DPI = 200
-
 
 
 
@@ -88,32 +87,35 @@ import metpy
 from metpy.calc import (smooth_n_point, wind_speed, 
                         geopotential_to_height, vertical_velocity_pressure)
 import metpy.calc as mpcalc
+from metpy.units import units
 import netCDF4
 from tqdm.auto import tqdm
 from adjustText import adjust_text 
+import pint
 
 from __internal_funcs import (plot_towns, draw_logo, 
                               plot_points, define_hi_res_fig,
                               define_gearth_compat_fig, save_figs_to_kml)
 
 HRRR_VARIABLE_TABLE = {
-    'temp': 't',
-    'dpt': 'dpt',
-    'rh': 'r',
-    'gpm': 'gh',
-    'vv': 'w',
-    'cldcvr': 'cc',
-    'u': 'u',
-    'v': 'v',
-    'mxgrat' : 'q',
-    'pressure': 'isobaricInhPa',
+    #internal id: (grib id, base unit, data file (if diff from pressure levels))
+    'temp': ('t', 'K'),
+    'dpt': ('dpt', 'K'),
+    'rh': ('r', '%'),
+    'gpm': ('gh', 'm^2/s^2'),
+    'vv': ('w', 'pascal/s'),
+    'cldcvr': ('cc', '%'),
+    'u': ('u', 'm/s'),
+    'v': ('v', 'm/s'),
+    'mxgrat' : ('q', 'kg/kg'),
+    'pressure': ('isobaricInhPa', 'hectopascal'),
+    'SFC_t': ('t2m', 'K', 'm2_data'),
+    'SFC_dpt': ('d2m', 'K', 'm2_data'),
+    'SFC_rh': ('r2', '%', 'm2_data'),
+    'SFC_landt': ('t', 'K', 'sfc_data'),
+    'SFC_u': ('u10', 'm/s', 'm10_data'),
+    'SFC_v': ('v10', 'm/s', 'm10_data')
 }
-#     'sfc_temp':
-#     'sfc_dpt':
-#     'sfc_rh':
-#     'sfc_hgt':
-
-# }
 
 ERA5_VARIABLE_TABLE = {
     'temp': 't',
@@ -141,9 +143,10 @@ def plot_plan_view_hrrr(file_path: str,
                         products: list[str, ...],
                         points: list[tuple[float, float, str], ...],
                         bbox: list[float, float, float, float],
+                        unit_reg: pint.UnitRegistry,
                         **kwargs) -> None:
 
-    if level == "9999": #Surface flag
+    if level == 9999: #Surface flag
         sfc_flag = True
     else:
         sfc_flag = False
@@ -153,11 +156,13 @@ def plot_plan_view_hrrr(file_path: str,
         m2_data = xr.open_dataset(file_path, engine="cfgrib", filter_by_keys={'typeOfLevel': 'heightAboveGround', 'level': 2})
         m10_data = xr.open_dataset(file_path, engine="cfgrib", filter_by_keys={'typeOfLevel': 'heightAboveGround', 'level': 10})
 
+        file_time_str = str(sfc_data['time'].values)
     else:
         col_data = xr.open_dataset(file_path, engine="cfgrib", filter_by_keys={'typeOfLevel': 'isobaricInhPa'})
         data = col_data.sel(isobaricInhPa=level)
+        file_time_str = str(data['time'].values)
 
-    file_time_str = str(data['time'].values)
+    
     file_day = file_time_str[:10].replace("-", "_")
     file_time = file_time_str[11:16].replace(":", "") + "UTC"
 
@@ -181,11 +186,23 @@ def plot_plan_view_hrrr(file_path: str,
                                                  'hrrr',
                                                  prodstr,
                                                  filestr,
+                                                 unit_reg,
                                                  fig_for_cb=cbfig,
                                                  ax_for_cb=cbax,
                                                  sfc_data=sfc_data,
                                                  m2_data=m2_data,
-                                                 m10_data=m10_data)
+                                                 m10_data=m10_data,
+                                                 **kwargs)
+
+        prodstr, filestr = draw_surface_wind_display(fig, ax,
+                                                     m10_data,
+                                                     products,
+                                                     'hrrr',
+                                                     prodstr,
+                                                     filestr,
+                                                     unit_reg,
+                                                     **kwargs)
+
 
     else:
         prodstr, filestr = draw_contourf_lines(fig, ax,
@@ -195,6 +212,7 @@ def plot_plan_view_hrrr(file_path: str,
                                                'hrrr',
                                                prodstr,
                                                filestr,
+                                               unit_reg,
                                                fig_for_cb=cbfig,
                                                ax_for_cb=cbax,
                                                **kwargs)
@@ -206,6 +224,7 @@ def plot_plan_view_hrrr(file_path: str,
                                               'hrrr',
                                               prodstr,
                                               filestr,
+                                              unit_reg,
                                               **kwargs)
 
         prodstr, filestr = draw_wind_display(fig, ax,
@@ -215,6 +234,7 @@ def plot_plan_view_hrrr(file_path: str,
                                              'hrrr',
                                              prodstr,
                                              filestr,
+                                             unit_reg,
                                              **kwargs)
 
     if points:
@@ -237,8 +257,15 @@ def plot_plan_view_hrrr(file_path: str,
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    if kwargs.get('save_to_kmz'):
+    if sfc_flag:
+        file_name = "PlanView_SFC" + filestr + "_" + file_day + "_" + file_time +"_HRRR"
+        descstr = f"Surface Level\nValid at {np.datetime_as_string(sfc_data['valid_time'].values, timezone='UTC')[:-11].replace('T', ' ')} UTC"
+    else:
         file_name = "PlanView_" + str(sel_level) + filestr + "_" + file_day + "_" + file_time +"_HRRR"
+        descstr = f"{str(data['isobaricInhPa'].values)} hPa Level\nValid at {np.datetime_as_string(data['valid_time'].values, timezone='UTC')[:-11].replace('T', ' ')} UTC"
+
+    if kwargs.get('save_to_kmz'):
+        
         layer_name = f"HRRR Reanalysis at {np.datetime_as_string(data['valid_time'].values, timezone='UTC')[:-11].replace('T', ' ')} UTC"
         layer_desc = titlestr.replace('/\n', ' ') + f', at {sel_level} hPa level'
 
@@ -264,11 +291,8 @@ def plot_plan_view_hrrr(file_path: str,
 
         draw_logo(ax)
         
-        descstr = f"{str(data['isobaricInhPa'].values)} hPa Level\nValid at {np.datetime_as_string(data['valid_time'].values, timezone='UTC')[:-11].replace('T', ' ')} UTC"
         ax.set_title(f'HRRR Reanalysis {titlestr}', loc='left', fontweight='bold', fontsize=15)
         plt.title(descstr, loc='right')
-
-        file_name = "PlanView_" + str(sel_level) + filestr + "_" + file_day + "_" + file_time +"_HRRR"
 
         dest_path = os.path.join(save_dir, file_name + ".png")
 
@@ -292,7 +316,6 @@ def plot_plan_view_era5(file_path: str,
         sfc_data = xr.open_dataset(file_path, engine="cfgrib", filter_by_keys={'typeOfLevel': 'surface', 'stepType': 'instant'})
         m2_data = xr.open_dataset(file_path, engine="cfgrib", filter_by_keys={'typeOfLevel': 'heightAboveGround', 'level': 2})
         m10_data = xr.open_dataset(file_path, engine="cfgrib", filter_by_keys={'typeOfLevel': 'heightAboveGround', 'level': 10})
-
     else:
         col_data = xr.open_dataset(file_path, engine="cfgrib")
         data = col_data.sel(isobaricInhPa=level)
@@ -530,192 +553,7 @@ def plot_plan_view_wrf(file_path: str,
         fig.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
         plt.close(fig)
 
-def draw_surface_products(fig: mpl.figure.Figure,
-                          ax: mpl.axes.Axes,
-                          products: list[str, ...],
-                          model: str,
-                          prodstr: str,
-                          prodabbr: str,
-                          fig_for_cb: mpl.figure.Figure = None,
-                          ax_for_cb: mpl.axes.Axes = None,
-                          **kwargs) -> tuple[str, str]:
 
-    if fig_for_cb and ax_for_cb:
-        cb_fig = fig_for_cb
-        cb_ax = ax_for_cb
-
-        cbar_opts = {'rotation': -90, 'color': 'k', 'labelpad': 20}
-    else:
-        cb_fig = fig
-        cb_ax = None
-
-        cbar_opts = {}
-
-
-    if model == 'hrrr':
-        vtable = HRRR_VARIABLE_TABLE
-        lat = data.variables['latitude'][:]
-        lon = data.variables['longitude'][:]
-    elif model == 'era5':
-        vtable = ERA5_VARIABLE_TABLE
-        lat = data.variables['latitude'][:]
-        lon = data.variables['longitude'][:]
-
-
-    if "cldcvr_cf" in products:
-        levels = np.arange(kwargs.pop('cldcvr_level_min', 0),
-                           kwargs.pop('cldcvr_level_max', 1.1),
-                           kwargs.pop('cldcvr_level_step', 0.1))
-
-        if VARIABLE_SMOOTHING == True:
-            var_contourf = ax.contourf(lon, lat, 
-                                       smooth_n_point(data.variables[vtable['cldcvr']][:],
-                                                      SMOOTHING_POINTS,
-                                                      SMOOTHING_PASSES), 
-                                       levels=levels, 
-                                       transform=crs.PlateCarree(), 
-                                       cmap=kwargs.pop('cldcvr_pallete', cm.Blues), 
-                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
-        else:
-            var_contourf = ax.contourf(lon, lat, 
-                                       data.variables[vtable['cldcvr']][:], 
-                                       levels=levels, 
-                                       transform=crs.PlateCarree(), 
-                                       cmap=kwargs.pop('cldcvr_pallete', cm.Blues), 
-                                       vmin=levels.min(),
-                                       vmax=levels.max(),
-                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
-        cb = cb_fig.colorbar(var_contourf, 
-                          ax=ax, 
-                          cax=cb_ax,
-                          ticks=levels[::2], 
-                          orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
-                          shrink=0.77)
-        cb.set_label('Fraction of Cloud Cover', size='x-large', **cbar_opts)
-
-        prodstr += "#Fraction of Cloud Cover (shaded)"
-        prodabbr += "_CC"
-
-    if "rh_cf" in products:
-        levels = np.arange(kwargs.pop('rh_level_min', 0),
-                           kwargs.pop('rh_level_max', 1.1),
-                           kwargs.pop('rh_level_step', 0.1))
-
-        if VARIABLE_SMOOTHING == True:
-            var_contourf = ax.contourf(lon, lat, 
-                                       smooth_n_point(data.variables[vtable['rh']][:], 
-                                                      SMOOTHING_POINTS,
-                                                      SMOOTHING_PASSES), 
-                                       levels=levels, 
-                                       transform=crs.PlateCarree(), 
-                                       cmap=kwargs.pop('rh_pallete', cm.terrain_r), 
-                                       extend='max',
-                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
-        else:
-            var_contourf = ax.contourf(lon, lat, 
-                                       data.variables[vtable['rh']][:], 
-                                       levels=levels, 
-                                       transform=crs.PlateCarree(), 
-                                       cmap=kwargs.pop('rh_pallete', cm.terrain_r), 
-                                       vmin=levels.min(),
-                                       vmax=levels.max(),
-                                       extend='max',
-                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
-        cb = cb_fig.colorbar(var_contourf, 
-                          ax=ax, 
-                          cax=cb_ax,
-                          ticks=levels[::2], 
-                          orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
-                          shrink=0.77,
-                          extendrect=True)
-        cb.set_label('Relative Humidty (%)', size='x-large', **cbar_opts)
-
-        prodstr += "#Relative Humidity (%, shaded)"
-        prodabbr += "_RH"
-
-    if "wind_cf" in products:
-        levels = np.arange(kwargs.pop('wind_level_min', 0),
-                           kwargs.pop('wind_level_max', 40 if sel_level > 500 else 100),
-                           kwargs.pop('wind_level_step', 2 if sel_level > 500 else 5))
-
-        wind_speed = mpcalc.wind_speed(data[vtable['u']], data[vtable['v']]).metpy.convert_units('knots')
-
-        if VARIABLE_SMOOTHING == True:
-            var_contourf = ax.contourf(lon, lat, 
-                                       smooth_n_point(wind_speed, 
-                                                      SMOOTHING_POINTS,
-                                                      SMOOTHING_PASSES), 
-                                       levels=levels, 
-                                       transform=crs.PlateCarree(), 
-                                       cmap=kwargs.pop('wind_pallete', cm.jet), 
-                                       extend='max',
-                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
-        else:
-            var_contourf = ax.contourf(lon, lat, 
-                                       wind_speed, 
-                                       levels=levels, 
-                                       transform=crs.PlateCarree(), 
-                                       cmap=kwargs.pop('wind_pallete', cm.jet), 
-                                       vmin=levels.min(),
-                                       vmax=levels.max(),
-                                       extend='max',
-                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
-        cb = cb_fig.colorbar(var_contourf, 
-                          ax=ax, 
-                          cax=cb_ax,
-                          ticks=levels[::2], 
-                          orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
-                          shrink=0.77)
-        cb.set_label('Wind Speed (kts)', size='x-large', **cbar_opts)
-
-        prodstr += "#Wind Speed (kts, shaded)"
-        prodabbr += "_WS"
-
-    if "vv_cf" in products:
-        levels = np.arange(kwargs.pop('vv_level_min', -450),
-                           kwargs.pop('vv_level_max', 450),
-                           kwargs.pop('vv_level_step', 10))
-
-        if model == "hrrr":
-            vv = vertical_velocity(data[vtable['vv']],
-                                   data[vtable['pres']],
-                                   data[vtable['temp']],
-                                   data[vtable['mxgrat']])
-
-            vv = vv.magnitude * 196.9 #m/s to ft/min
-
-        if VARIABLE_SMOOTHING == True:
-            var_contourf = ax.contourf(lon, lat, 
-                                       smooth_n_point(vv, 
-                                                      SMOOTHING_POINTS,
-                                                      SMOOTHING_PASSES), 
-                                       levels=levels, 
-                                       transform=crs.PlateCarree(), 
-                                       cmap=kwargs.pop('vv_pallete', cm.bwr), 
-                                       extend='both',
-                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
-        else:
-            var_contourf = ax.contourf(lon, lat, 
-                                       vv, 
-                                       levels=levels, 
-                                       transform=crs.PlateCarree(), 
-                                       cmap=kwargs.pop('vv_pallete', cm.bwr), 
-                                       vmin=levels.min(),
-                                       vmax=levels.max(),
-                                       extend='both',
-                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
-        cb = cb_fig.colorbar(var_contourf, 
-                          ax=ax, 
-                          cax=cb_ax,
-                          ticks=levels[::2], 
-                          orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
-                          shrink=0.77)
-        cb.set_label('Vertical Velocity (ft/s)', size='x-large', **cbar_opts)
-
-        prodstr += "#Vertical Velocity (ft/s, shaded)"
-        prodabbr += "_VV"
-
-    return prodstr, prodabbr
 
 def draw_contourf_lines(fig: mpl.figure.Figure,
                         ax: mpl.axes.Axes,
@@ -725,6 +563,7 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
                         model: str,
                         prodstr: str,
                         prodabbr: str,
+                        unit_reg: pint.UnitRegistry,
                         fig_for_cb: mpl.figure.Figure = None,
                         ax_for_cb: mpl.axes.Axes = None,
                         **kwargs) -> tuple[str, str]:
@@ -755,10 +594,22 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
                            kwargs.pop('temp_level_max', 45 if sel_level > 500 else 20),
                            kwargs.pop('temp_level_step', 2))
 
+        var = data.variables[vtable['temp'][0]][:]
+        var_baseunits = units.Quantity(var, vtable['temp'][1])
+
+        default_unit = 'degC'
+
+        if kwargs.get('temp_units'):
+            unit = unit_reg.Unit(kwargs.pop('temp_units', default_unit))
+            var_units = var_baseunits.to(unit_reg(unit))
+        else:
+            unit = unit_reg.Unit(default_unit)
+            var_units = var_baseunits
+
         if VARIABLE_SMOOTHING == True:
 
             var_contourf = ax.contourf(lon, lat, 
-                                       smooth_n_point(data.variables[vtable['temp']][:] - 273.15,
+                                       smooth_n_point(var_units.magnitude,
                                                       SMOOTHING_POINTS,
                                                       SMOOTHING_PASSES), 
                                        levels=levels, 
@@ -770,7 +621,7 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
                                        zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
         else:
             var_contourf = ax.contourf(lon, lat, 
-                                       data.variables[vtable['temp']][:] - 273.15, 
+                                       var_units.magnitude, 
                                        levels=levels, 
                                        transform=crs.PlateCarree(), 
                                        cmap=kwargs.pop('temp_pallete', cm.Spectral_r), 
@@ -784,9 +635,9 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
                           ticks=levels[::2], 
                           orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
                           shrink=0.77)
-        cb.set_label('Temperature (°C)', size='x-large', **cbar_opts)
+        cb.set_label(f'Temperature ({unit:~C})', size='x-large', **cbar_opts)
 
-        prodstr += "#Temperature (°C, shaded contours)"
+        prodstr += f"#Temperature ({unit:~C}, shaded contours)"
         prodabbr += "_T"
 
     if "cldcvr_cf" in products:
@@ -796,7 +647,7 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
 
         if VARIABLE_SMOOTHING == True:
             var_contourf = ax.contourf(lon, lat, 
-                                       smooth_n_point(data.variables[vtable['cldcvr']][:],
+                                       smooth_n_point(data.variables[vtable['cldcvr'][0]][:],
                                                       SMOOTHING_POINTS,
                                                       SMOOTHING_PASSES), 
                                        levels=levels, 
@@ -828,9 +679,22 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
                            kwargs.pop('rh_level_max', 1.1),
                            kwargs.pop('rh_level_step', 0.1))
 
+        var = data.variables[vtable['rh'][0]][:]
+        var_baseunits = units.Quantity(var, vtable['rh'][1])
+
+        default_unit = '%'
+
+        if kwargs.get('rh_units'):
+            unit = unit_reg.Unit(kwargs.pop('rh_units', default_unit))
+            var_units = var_baseunits.to(unit_reg(unit))
+        else:
+            unit = unit_reg.Unit(default_unit)
+            var_units = var_baseunits
+
+
         if VARIABLE_SMOOTHING == True:
             var_contourf = ax.contourf(lon, lat, 
-                                       smooth_n_point(data.variables[vtable['rh']][:], 
+                                       smooth_n_point(var_units.magnitude, 
                                                       SMOOTHING_POINTS,
                                                       SMOOTHING_PASSES), 
                                        levels=levels, 
@@ -840,7 +704,7 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
                                        zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
         else:
             var_contourf = ax.contourf(lon, lat, 
-                                       data.variables[vtable['rh']][:], 
+                                       var_units.magnitude, 
                                        levels=levels, 
                                        transform=crs.PlateCarree(), 
                                        cmap=kwargs.pop('rh_pallete', cm.terrain_r), 
@@ -855,9 +719,9 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
                           orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
                           shrink=0.77,
                           extendrect=True)
-        cb.set_label('Relative Humidty (%)', size='x-large', **cbar_opts)
+        cb.set_label(f'Relative Humidty ({unit:~C})', size='x-large', **cbar_opts)
 
-        prodstr += "#Relative Humidity (%, shaded)"
+        prodstr += f"#Relative Humidity ({unit:~C}, shaded)"
         prodabbr += "_RH"
 
     if "wind_cf" in products:
@@ -865,11 +729,20 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
                            kwargs.pop('wind_level_max', 40 if sel_level > 500 else 100),
                            kwargs.pop('wind_level_step', 2 if sel_level > 500 else 5))
 
-        wind_speed = mpcalc.wind_speed(data[vtable['u']], data[vtable['v']]).metpy.convert_units('knots')
+        wind_speed = mpcalc.wind_speed(data[vtable['u'][0]], data[vtable['v'][0]])
+
+        default_unit = 'knots'
+
+        if kwargs.get('wind_units'):
+            unit = unit_reg.Unit(kwargs.get('wind_units', default_unit))
+            var_units = wind_speed.metpy.convert_units(unit)
+        else:
+            unit = unit_reg.Unit(default_unit)
+            var_units = wind_speed.metpy.convert_units(unit)
 
         if VARIABLE_SMOOTHING == True:
             var_contourf = ax.contourf(lon, lat, 
-                                       smooth_n_point(wind_speed, 
+                                       smooth_n_point(var_units, 
                                                       SMOOTHING_POINTS,
                                                       SMOOTHING_PASSES), 
                                        levels=levels, 
@@ -879,7 +752,7 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
                                        zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
         else:
             var_contourf = ax.contourf(lon, lat, 
-                                       wind_speed, 
+                                       var_units, 
                                        levels=levels, 
                                        transform=crs.PlateCarree(), 
                                        cmap=kwargs.pop('wind_pallete', cm.jet), 
@@ -893,10 +766,55 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
                           ticks=levels[::2], 
                           orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
                           shrink=0.77)
-        cb.set_label('Wind Speed (kts)', size='x-large', **cbar_opts)
+        cb.set_label(f'Wind Speed ({unit:~C})', size='x-large', **cbar_opts)
 
-        prodstr += "#Wind Speed (kts, shaded)"
+        prodstr += f"#Wind Speed ({unit:~C}, shaded)"
         prodabbr += "_WS"
+
+    if "wd_cf" in products:
+        levels = np.arange(kwargs.pop('wd_level_min', 0),
+                           kwargs.pop('wd_level_max', 365),
+                           kwargs.pop('wd_level_step', 15))
+
+        wind_direction = mpcalc.wind_direction(data[vtable['u'][0]], data[vtable['v'][0]])
+
+        default_unit = 'degrees'
+        
+        if kwargs.get('wd_units'):
+            unit = unit_reg.Unit(kwargs.pop('wd_units', default_unit))
+            var_units = wind_direction.metpy.convert_units(unit)
+        else:
+            unit = unit_reg.Unit(default_unit)
+            var_units = wind_direction.metpy.convert_units(unit)
+
+        if VARIABLE_SMOOTHING == True:
+            var_contourf = ax.contourf(lon, lat, 
+                                       smooth_n_point(var_units, 
+                                                      SMOOTHING_POINTS,
+                                                      SMOOTHING_PASSES), 
+                                       levels=levels, 
+                                       transform=crs.PlateCarree(), 
+                                       cmap=kwargs.pop('wd_pallete', cm.twilight), 
+                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
+        else:
+            var_contourf = ax.contourf(lon, lat, 
+                                       var_units, 
+                                       levels=levels, 
+                                       transform=crs.PlateCarree(), 
+                                       cmap=kwargs.pop('wd_pallete', cm.twilight), 
+                                       vmin=levels.min(),
+                                       vmax=levels.max(),
+                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
+        cb = cb_fig.colorbar(var_contourf, 
+                          ax=ax, 
+                          cax=cb_ax,
+                          ticks=levels[::2], 
+                          orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
+                          shrink=0.77)
+        cb.set_label(f'Wind Direction ({unit:~C})', size='x-large', **cbar_opts)
+
+        prodstr += f"#Wind Direction ({unit:~C}, shaded)"
+        prodabbr += "_WD"
 
     if "vv_cf" in products:
         levels = np.arange(kwargs.pop('vv_level_min', -450),
@@ -952,6 +870,7 @@ def draw_contour_lines(fig: mpl.figure.Figure,
                        model: str,
                        prodstr: str,
                        prodabbr: str,
+                       unit_reg: pint.UnitRegistry,
                        **kwargs) -> tuple[str, str]:
 
     num_prods = 0
@@ -1025,6 +944,7 @@ def draw_wind_display(fig: mpl.figure.Figure,
                       model: str,
                       prodstr: str,
                       prodabbr: str,
+                      unit_reg: pint.UnitRegistry,
                       **kwargs) -> tuple[str, str]:
 
     slicer_idx = kwargs.pop('wind_display_indexing', 4)
@@ -1038,36 +958,57 @@ def draw_wind_display(fig: mpl.figure.Figure,
         lat = data.variables['latitude'][:]
         lon = data.variables['longitude'][:]
 
-    u = data[vtable['u']]
-    v = data[vtable['v']]
+    u = data[vtable['u'][0]]
+    v = data[vtable['v'][0]]
 
-    ukt = u.metpy.convert_units('knots')
-    vkt = v.metpy.convert_units('knots')
+    wind_speed = mpcalc.wind_speed(data[vtable['u'][0]], data[vtable['v'][0]])
 
-    wind_speed = mpcalc.wind_speed(data[vtable['u']], data[vtable['v']]).metpy.convert_units('knots')
+    default_unit = 'knots'
+
+    if kwargs.get('wind_display_units'):
+        unit = unit_reg.Unit(kwargs.pop('wind_display_units', default_unit))
+
+        u_units = u.metpy.convert_units(unit)
+        v_units = v.metpy.convert_units(unit)
+
+        wind_speed_units = wind_speed.metpy.convert_units(unit)
+
+    else:
+        unit = unit_reg.Unit(default_unit)
+
+        u_units = u.metpy.convert_units(default_unit)
+
+        u_units = u.metpy.convert_units(unit)
+        v_units = v.metpy.convert_units(unit)
+
+        wind_speed_units = wind_speed.metpy.convert_units(unit)
 
     if "wind_vectors" in products:
         if slicer_idx > 0:
             if model == 'era5':
                 obj = ax.quiver(lon[::slicer_idx], lat[::slicer_idx], 
-                            ukt[::slicer_idx, ::slicer_idx], 
-                            vkt[::slicer_idx, ::slicer_idx], 
+                            u_units[::slicer_idx, ::slicer_idx], 
+                            v_units[::slicer_idx, ::slicer_idx], 
                             color=kwargs.pop('wind_display_color', 'greenyellow'), 
                             transform=crs.PlateCarree(),
                             zorder=kwargs.pop('wind_display_zorder', SHAPE_ZORDER))
             else:
                 obj = ax.quiver(lon[::slicer_idx, ::slicer_idx], lat[::slicer_idx, ::slicer_idx], 
-                            ukt[::slicer_idx, ::slicer_idx], 
-                            vkt[::slicer_idx, ::slicer_idx], 
+                            u_units[::slicer_idx, ::slicer_idx], 
+                            v_units[::slicer_idx, ::slicer_idx], 
                             color=kwargs.pop('wind_display_color', 'greenyellow'), 
                             transform=crs.PlateCarree(),
+                            scale=0.5,
+                            scale_units='dots',
                             zorder=kwargs.pop('wind_display_zorder', SHAPE_ZORDER))
         else:
             obj = ax.quiver(lon, lat, 
-                            ukt, 
-                            vkt, 
+                            u_units, 
+                            v_units, 
                             color=kwargs.pop('wind_display_color', 'greenyellow'),
                             transform=crs.PlateCarree(),
+                            scale=0.5,
+                            scale_units='dots',
                             zorder=kwargs.pop('wind_display_zorder', SHAPE_ZORDER))
         prodabbr += "_Wv"
 
@@ -1075,24 +1016,24 @@ def draw_wind_display(fig: mpl.figure.Figure,
         if slicer_idx > 0:
             if model == 'era5':
                 obj = ax.barbs(lon[::slicer_idx], lat[::slicer_idx], 
-                               ukt[::slicer_idx, ::slicer_idx], 
-                               vkt[::slicer_idx, ::slicer_idx], 
+                               u_units[::slicer_idx, ::slicer_idx], 
+                               v_units[::slicer_idx, ::slicer_idx], 
                                color=kwargs.pop('wind_display_color', 'greenyellow'), 
                                length=kwargs.pop('wind_vector_length', 6), 
                                transform=crs.PlateCarree(),
                                zorder=kwargs.pop('wind_display_zorder', SHAPE_ZORDER))
             else:
                 obj = ax.barbs(lon[::slicer_idx, ::slicer_idx], lat[::slicer_idx, ::slicer_idx], 
-                               ukt[::slicer_idx, ::slicer_idx], 
-                               vkt[::slicer_idx, ::slicer_idx], 
+                               u_units[::slicer_idx, ::slicer_idx], 
+                               v_units[::slicer_idx, ::slicer_idx], 
                                color=kwargs.pop('wind_display_color', 'greenyellow'), 
                                length=kwargs.pop('wind_vector_length', 6), 
                                transform=crs.PlateCarree(),
                                zorder=kwargs.pop('wind_display_zorder', SHAPE_ZORDER))
         else:
             obj = ax.barbs(lon, lat, 
-                           ukt, 
-                           vkt, 
+                           u_units, 
+                           v_units, 
                            color=kwargs.pop('wind_display_color', 'greenyellow'), 
                            length=kwargs.pop('wind_vector_length', 6), 
                            transform=crs.PlateCarree(),
@@ -1102,7 +1043,7 @@ def draw_wind_display(fig: mpl.figure.Figure,
     if "wind_values" in products:
         lat_val, lon_val = np.meshgrid(lat.values, lon.values)
         if slicer_idx > 0:
-            for ws_row, lat_row, lon_row in zip(ws, lat_val, lon_val):
+            for ws_row, lat_row, lon_row in zip(wind_speed_units, lat_val, lon_val):
                 for this_ws, this_lat, this_lon in zip(ws_row[::slicer_idx], lat_row[::slicer_idx], lon_row[::slicer_idx]):
                     obj = ax.annotate(str(round(this_ws.magnitude, 1)), 
                                       (this_lon, this_lat), 
@@ -1115,7 +1056,371 @@ def draw_wind_display(fig: mpl.figure.Figure,
                                       annotation_clip=False, 
                                       zorder=kwargs.pop('wind_display_zorder', SHAPE_ZORDER))
         else:
-            for ws_row, lat_row, lon_row in zip(ws, lat_val, lon_val):
+            for ws_row, lat_row, lon_row in zip(wind_speed_units, lat_val, lon_val):
+                for this_ws, this_lat, this_lon in zip(ws_row, lat_row, lon_row,):
+                    obj = ax.annotate(str(round(this_ws.magnitude, 1)), 
+                                      (this_lon, this_lat), 
+                                      horizontalalignment='right', 
+                                      verticalalignment='top', 
+                                      color=kwargs.pop('wind_display_color', 'white'), 
+                                      clip_box=ax.bbox, 
+                                      fontsize=kwargs.pop('wind_values_fontsize', 8), 
+                                      transform=crs.PlateCarree(), 
+                                      annotation_clip=False, 
+                                      zorder=kwargs.pop('wind_display_zorder', SHAPE_ZORDER))
+        prodabbr += "_Wd"
+
+    obj.set_path_effects([PathEffects.withStroke(linewidth=4, 
+                                                 foreground=kwargs.pop('wind_display_outline_coor', 'black'))])
+
+    return prodstr, prodabbr
+
+def draw_surface_products(fig: mpl.figure.Figure,
+                          ax: mpl.axes.Axes,
+                          products: list[str, ...],
+                          model: str,
+                          prodstr: str,
+                          prodabbr: str,
+                          unit_reg: pint.UnitRegistry,
+                          fig_for_cb: mpl.figure.Figure = None,
+                          ax_for_cb: mpl.axes.Axes = None,
+                          **kwargs) -> tuple[str, str]:
+
+    if fig_for_cb and ax_for_cb:
+        cb_fig = fig_for_cb
+        cb_ax = ax_for_cb
+
+        cbar_opts = {'rotation': -90, 'color': 'k', 'labelpad': 20}
+    else:
+        cb_fig = fig
+        cb_ax = None
+
+        cbar_opts = {}
+
+
+    meta_df = kwargs.get('sfc_data')
+    if model == 'hrrr':
+        vtable = HRRR_VARIABLE_TABLE
+        lat = meta_df.variables['latitude'][:]
+        lon = meta_df.variables['longitude'][:]
+    elif model == 'era5':
+        vtable = ERA5_VARIABLE_TABLE
+        lat = meta_df.variables['latitude'][:]
+        lon = meta_df.variables['longitude'][:]
+
+    if "temp_cf" in products:
+        levels = np.arange(kwargs.pop('temp_level_min', -30),
+                           kwargs.pop('temp_level_max', 45),
+                           kwargs.pop('temp_level_step', 2))
+
+        data_file = kwargs.get(vtable['SFC_t'][2])
+        var = data_file.variables[vtable['SFC_t'][0]][:]
+        var_baseunits = units.Quantity(var, vtable['SFC_t'][1])
+
+        default_unit = 'degC'
+
+        if kwargs.get('temp_units'):
+            unit = unit_reg.Unit(kwargs.pop('temp_units', default_unit))
+            var_units = var_baseunits.to(unit_reg(unit))
+        else:
+            unit = unit_reg.Unit(default_unit)
+            var_units = var_baseunits
+
+
+        if VARIABLE_SMOOTHING == True:
+
+            var_contourf = ax.contourf(lon, lat, 
+                                       smooth_n_point(var_units.magnitude,
+                                                      SMOOTHING_POINTS,
+                                                      SMOOTHING_PASSES), 
+                                       levels=levels, 
+                                       transform=crs.PlateCarree(), 
+                                       cmap=kwargs.pop('temp_pallete', cm.Spectral_r), 
+                                       vmin=levels.min(),
+                                       vmax=levels.max(),
+                                       extend='both',
+                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
+        else:
+            var_contourf = ax.contourf(lon, lat, 
+                                       var_units.magnitude, 
+                                       levels=levels, 
+                                       transform=crs.PlateCarree(), 
+                                       cmap=kwargs.pop('temp_pallete', cm.Spectral_r), 
+                                       vmin=levels.min(),
+                                       vmax=levels.max(),
+                                       extend='both',
+                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
+        cb = cb_fig.colorbar(var_contourf, 
+                          ax=ax, 
+                          cax=cb_ax,
+                          ticks=levels[::2], 
+                          orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
+                          shrink=0.77)
+        cb.set_label(f'2m Temperature ({unit:~C})', size='x-large', **cbar_opts)
+
+        prodstr += f"#2m Temperature ({unit:~C}, shaded)"
+        prodabbr += "_T"
+
+    if "rh_cf" in products:
+        levels = np.arange(kwargs.pop('rh_level_min', 0),
+                           kwargs.pop('rh_level_max', 1.1),
+                           kwargs.pop('rh_level_step', 0.1))
+
+        data_file = kwargs.get(vtable['SFC_rh'][2])
+        var = data_file.variables[vtable['SFC_rh'][0]][:]
+
+        if VARIABLE_SMOOTHING == True:
+            var_contourf = ax.contourf(lon, lat, 
+                                       smooth_n_point(var, 
+                                                      SMOOTHING_POINTS,
+                                                      SMOOTHING_PASSES), 
+                                       levels=levels, 
+                                       transform=crs.PlateCarree(), 
+                                       cmap=kwargs.pop('rh_pallete', cm.terrain_r), 
+                                       extend='max',
+                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
+        else:
+            var_contourf = ax.contourf(lon, lat, 
+                                       var, 
+                                       levels=levels, 
+                                       transform=crs.PlateCarree(), 
+                                       cmap=kwargs.pop('rh_pallete', cm.terrain_r), 
+                                       vmin=levels.min(),
+                                       vmax=levels.max(),
+                                       extend='max',
+                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
+        cb = cb_fig.colorbar(var_contourf, 
+                          ax=ax, 
+                          cax=cb_ax,
+                          ticks=levels[::2], 
+                          orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
+                          shrink=0.77,
+                          extendrect=True)
+        cb.set_label('2m Relative Humidty (%)', size='x-large', **cbar_opts)
+
+        prodstr += "#2m Relative Humidity (%, shaded)"
+        prodabbr += "_RH"
+
+    if "wind_cf" in products:
+        levels = np.arange(kwargs.pop('wind_level_min', 0),
+                           kwargs.pop('wind_level_max', 40),
+                           kwargs.pop('wind_level_step', 2))
+
+        data_file = kwargs.get(vtable['SFC_u'][2])
+
+        base_unit = vtable['SFC_u'][1]
+        default_unit = 'knots'
+
+        u_baseunits = data_file[vtable['SFC_u'][0]].values
+        v_baseunits = data_file[vtable['SFC_v'][0]].values
+
+        var_baseunits = mpcalc.wind_speed(units.Quantity(u_baseunits, base_unit),
+                                          units.Quantity(v_baseunits, base_unit))
+
+        if kwargs.get('wind_units'):
+            unit = unit_reg.Unit(kwargs.get('wind_units'))
+            var_units = var_baseunits.to(unit)
+        else:
+            unit = unit_reg.Unit(default_unit)
+            var_units = var_baseunits.to(unit)
+
+        if VARIABLE_SMOOTHING == True:
+            var_contourf = ax.contourf(lon, lat, 
+                                       smooth_n_point(var_units, 
+                                                      SMOOTHING_POINTS,
+                                                      SMOOTHING_PASSES), 
+                                       levels=levels, 
+                                       transform=crs.PlateCarree(), 
+                                       cmap=kwargs.pop('wind_pallete', cm.jet), 
+                                       extend='max',
+                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
+        else:
+            var_contourf = ax.contourf(lon, lat, 
+                                       var_units, 
+                                       levels=levels, 
+                                       transform=crs.PlateCarree(), 
+                                       cmap=kwargs.pop('wind_pallete', cm.jet), 
+                                       vmin=levels.min(),
+                                       vmax=levels.max(),
+                                       extend='max',
+                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
+        cb = cb_fig.colorbar(var_contourf, 
+                          ax=ax, 
+                          cax=cb_ax,
+                          ticks=levels[::2], 
+                          orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
+                          shrink=0.77)
+        cb.set_label(f'10m Wind Speed ({unit:~C})', size='x-large', **cbar_opts)
+
+        prodstr += f"#10m Wind Speed ({unit:~C}, shaded)"
+        prodabbr += "_WS"
+
+    if "wd_cf" in products:
+        levels = np.arange(kwargs.pop('wd_level_min', 0),
+                           kwargs.pop('wd_level_max', 365),
+                           kwargs.pop('wd_level_step', 15))
+
+        data_file = kwargs.get(vtable['SFC_u'][2])
+        wind_direction = mpcalc.wind_direction(data_file[vtable['SFC_u'][0]], data_file[vtable['SFC_v'][0]])
+
+        default_unit = 'degrees'
+        
+        if kwargs.get('wd_units'):
+            unit = unit_reg.Unit(kwargs.pop('wd_units', default_unit))
+            var_units = wind_direction.metpy.convert_units(unit)
+        else:
+            unit = unit_reg.Unit(default_unit)
+            var_units = wind_direction.metpy.convert_units(unit)
+
+        if VARIABLE_SMOOTHING == True:
+            var_contourf = ax.contourf(lon, lat, 
+                                       smooth_n_point(var_units, 
+                                                      SMOOTHING_POINTS,
+                                                      SMOOTHING_PASSES), 
+                                       levels=levels, 
+                                       transform=crs.PlateCarree(), 
+                                       cmap=kwargs.pop('wd_pallete', cm.twilight), 
+                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
+        else:
+            var_contourf = ax.contourf(lon, lat, 
+                                       var_units, 
+                                       levels=levels, 
+                                       transform=crs.PlateCarree(), 
+                                       cmap=kwargs.pop('wd_pallete', cm.twilight), 
+                                       vmin=levels.min(),
+                                       vmax=levels.max(),
+                                       zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
+        cb = cb_fig.colorbar(var_contourf, 
+                          ax=ax, 
+                          cax=cb_ax,
+                          ticks=levels[::2], 
+                          orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
+                          shrink=0.77)
+        cb.set_label(f'10m Wind Direction ({unit:~C})', size='x-large', **cbar_opts)
+
+        prodstr += f"#10m Wind Direction ({unit:~C}, shaded)"
+        prodabbr += "_WD"
+
+    return prodstr, prodabbr
+
+def draw_surface_wind_display(fig: mpl.figure.Figure,
+                      ax: mpl.axes.Axes,
+                      m10_data: xr.Dataset | netCDF4.Dataset,
+                      products: list[str, ...],
+                      model: str,
+                      prodstr: str,
+                      prodabbr: str,
+                      unit_reg: pint.UnitRegistry,
+                      **kwargs) -> tuple[str, str]:
+
+    slicer_idx = kwargs.pop('wind_display_indexing', 4)
+
+    if model == 'hrrr':
+        vtable = HRRR_VARIABLE_TABLE
+        lat = m10_data.variables['latitude'][:]
+        lon = m10_data.variables['longitude'][:]
+    elif model == 'era5':
+        vtable = ERA5_VARIABLE_TABLE
+        lat = m10_data.variables['latitude'][:]
+        lon = m10_data.variables['longitude'][:]
+
+    u = m10_data[vtable['SFC_u'][0]]
+    v = m10_data[vtable['SFC_v'][0]]
+
+    wind_speed = mpcalc.wind_speed(m10_data[vtable['SFC_u'][0]], m10_data[vtable['SFC_v'][0]])
+
+    default_unit = 'knots'
+
+    if kwargs.get('wind_display_units'):
+        unit = unit_reg.Unit(kwargs.pop('wind_display_units', default_unit))
+
+        u_units = u.metpy.convert_units(unit)
+        v_units = v.metpy.convert_units(unit)
+
+        wind_speed_units = wind_speed.metpy.convert_units(unit)
+
+    else:
+        unit = unit_reg.Unit(default_unit)
+
+        u_units = u.metpy.convert_units(default_unit)
+        v_units = v.metpy.convert_units(default_unit)
+
+        wind_speed_units = wind_speed.metpy.convert_units(default_unit)
+
+    if "wind_vectors" in products:
+        if slicer_idx > 0:
+            if model == 'era5':
+                obj = ax.quiver(lon[::slicer_idx], lat[::slicer_idx], 
+                            u_units[::slicer_idx, ::slicer_idx], 
+                            v_units[::slicer_idx, ::slicer_idx], 
+                            color=kwargs.pop('wind_display_color', 'greenyellow'), 
+                            transform=crs.PlateCarree(),
+                            zorder=kwargs.pop('wind_display_zorder', SHAPE_ZORDER))
+            else:
+                obj = ax.quiver(lon[::slicer_idx, ::slicer_idx], lat[::slicer_idx, ::slicer_idx], 
+                            u_units[::slicer_idx, ::slicer_idx], 
+                            v_units[::slicer_idx, ::slicer_idx], 
+                            color=kwargs.pop('wind_display_color', 'greenyellow'), 
+                            transform=crs.PlateCarree(),
+                            scale=0.5,
+                            scale_units='dots',
+                            zorder=kwargs.pop('wind_display_zorder', SHAPE_ZORDER))
+        else:
+            obj = ax.quiver(lon, lat, 
+                            u_units, 
+                            v_units, 
+                            color=kwargs.pop('wind_display_color', 'greenyellow'),
+                            transform=crs.PlateCarree(),
+                            scale=0.5,
+                            scale_units='dots',
+                            zorder=kwargs.pop('wind_display_zorder', SHAPE_ZORDER))
+        prodabbr += "_Wv"
+
+    if "wind_barbs" in products:
+        if slicer_idx > 0:
+            if model == 'era5':
+                obj = ax.barbs(lon[::slicer_idx], lat[::slicer_idx], 
+                               u_units[::slicer_idx, ::slicer_idx], 
+                               v_units[::slicer_idx, ::slicer_idx], 
+                               color=kwargs.pop('wind_display_color', 'greenyellow'), 
+                               length=kwargs.pop('wind_vector_length', 6), 
+                               transform=crs.PlateCarree(),
+                               zorder=kwargs.pop('wind_display_zorder', SHAPE_ZORDER))
+            else:
+                obj = ax.barbs(lon[::slicer_idx, ::slicer_idx], lat[::slicer_idx, ::slicer_idx], 
+                               u_units[::slicer_idx, ::slicer_idx], 
+                               v_units[::slicer_idx, ::slicer_idx], 
+                               color=kwargs.pop('wind_display_color', 'greenyellow'), 
+                               length=kwargs.pop('wind_vector_length', 6), 
+                               transform=crs.PlateCarree(),
+                               zorder=kwargs.pop('wind_display_zorder', SHAPE_ZORDER))
+        else:
+            obj = ax.barbs(lon, lat, 
+                           u_units, 
+                           v_units, 
+                           color=kwargs.pop('wind_display_color', 'greenyellow'), 
+                           length=kwargs.pop('wind_vector_length', 6), 
+                           transform=crs.PlateCarree(),
+                           zorder=kwargs.pop('wind_display_zorder', SHAPE_ZORDER))
+        prodabbr += "_Wb"
+
+    if "wind_values" in products:
+        lat_val, lon_val = np.meshgrid(lat.values, lon.values)
+        if slicer_idx > 0:
+            for ws_row, lat_row, lon_row in zip(wind_speed_units, lat_val, lon_val):
+                for this_ws, this_lat, this_lon in zip(ws_row[::slicer_idx], lat_row[::slicer_idx], lon_row[::slicer_idx]):
+                    obj = ax.annotate(str(round(this_ws.magnitude, 1)), 
+                                      (this_lon, this_lat), 
+                                      horizontalalignment='right', 
+                                      verticalalignment='top', 
+                                      color=kwargs.pop('wind_display_color', 'white'), 
+                                      clip_box=ax.bbox, 
+                                      fontsize=kwargs.pop('wind_values_fontsize', 8), 
+                                      transform=crs.PlateCarree(), 
+                                      annotation_clip=False, 
+                                      zorder=kwargs.pop('wind_display_zorder', SHAPE_ZORDER))
+        else:
+            for ws_row, lat_row, lon_row in zip(wind_speed_units, lat_val, lon_val):
                 for this_ws, this_lat, this_lon in zip(ws_row, lat_row, lon_row,):
                     obj = ax.annotate(str(round(this_ws.magnitude, 1)), 
                                       (this_lon, this_lat), 
@@ -1268,6 +1573,8 @@ if __name__ == "__main__":
     elif args.model == 'gfs':
         input_files = sorted(glob.glob(f'{input_dir}*pgrb2*'))
 
+    unit_registry = pint.UnitRegistry()
+
     num_input_files = len(input_files)
     num_plot_steps = num_input_files * num_levels
 
@@ -1284,6 +1591,7 @@ if __name__ == "__main__":
                                         args.variables, 
                                         points, 
                                         bbox, 
+                                        unit_registry,
                                         **user_settings)
                 elif args.model == "era5":
                     plot_plan_view_era5(input_file_path, 
