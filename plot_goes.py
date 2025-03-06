@@ -472,8 +472,6 @@ def _calculate_pixel_lat_lon(proj_x, proj_y, proj_info):
     lats = np.arctan((r_eq**2 / r_pol**2) * (s_z / np.sqrt((H-s_x)**2 +s_y**2))) * (180/np.pi)
     lons = (l_0 - np.arctan(s_y / (H-s_x))) * (180/np.pi)
 
-    #print('{} N, {} W'.format(lats[318,1849],abs(lons[318,1849])))
-
     return lats, lons
 
 def _calculate_composite_product_data(data, product_name):

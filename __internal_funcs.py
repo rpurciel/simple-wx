@@ -23,6 +23,118 @@ from adjustText import adjust_text
 
 GEONAMES_USERNAME = 'rpurciel'
 
+def decode_metar(metar: str) -> dict:
+
+    WX_CODES = {'VC': 'Vicinity',
+                'RE': 'Recent',
+                'MI': 'Shallow',
+                'PR': 'Partial',
+                'BC': 'Patches',
+                'DR': 'Drifting',
+                'BL': 'Blowing',
+                'SH': 'Showers',
+                'TS': 'Thunderstorms',
+                'FZ': 'Freezing',
+                'DZ': 'Drizzle',
+                'RA': 'Rain',
+                'SN': 'Snow',
+                'SG': 'Snow Grains',
+                'GS': 'Graupel',
+                'GR': 'Hail',
+                'PL': 'Ice Pellets',
+                'IC': 'Ice Crystals',
+                'UP': 'Unknown Precipitation',
+                'FG': 'Fog',
+                'BR': 'Mist',
+                'HZ': 'Haze',
+                'VA': 'Volcanic Ash',
+                'DU': 'Dust',
+                'FU': 'Smoke',
+                'SA': 'Sand',
+                'PY': 'Spray',
+                'SQ': 'Squall',
+                'PO': 'Dust/Sand Whirls',
+                'DS': 'Duststorm',
+                'SS': 'Sandstorm',
+                'FC': 'Tornado',}
+
+    WX_CODE_REGEXSTR = '[-+]?(' + '|'.join('(%s)' % code for code in WX_CODES) + ')+'
+
+    CLD_CODES = {'SKC': 'Sky Clear',
+                 'NCD': 'No Cloud Detected',
+                 'CLR': 'Clear blw. FL120',
+                 'NSC': 'No Significant Cloud',
+                 'FEW': 'Few',
+                 'SCT': 'Scattered',
+                 'BKN': 'Broken',
+                 'OVC': 'Overcast',}
+
+    CLD_CODE_REGEXSTR = '(' + '|'.join('(%s)' % code for code in CLD_CODES) + ')(\d{3})?((TCU)|(CB))?'
+
+    groups = metar.split(' ')
+
+    apt_group = [str for str in groups if re.match('[KP]\w{3}', str)]
+    utc_group = [str for str in groups if re.match('\d{6}Z', str)]
+    wind_group = [str for str in groups if re.match('\d{5}(G\d{2})?[(KT)|(MPS)]', str)]
+    wind_var_group = [str for str in groups if re.match('\d{3}V\d{3}', str)]
+    wx_groups = [str for str in groups if re.match(WX_CODE_REGEXSTR, str)]
+    cld_groups = [str for str in groups if re.match(CLD_CODE_REGEXSTR, str)]
+    temp_group_auto = [str for str in groups if re.match('T\d+', str)]
+
+    metar_dict = dict()
+
+    if apt_group:
+        metar_dict['Airport'] = apt_group[0]
+
+    if utc_group:
+        utc_day = int(utc_group[0][0:1])
+        utc_hour = int(utc_group[0][2:3])
+        utc_minute = int(utc_group[0][4:5])
+
+        utc_time = f'{utc_day} {str(utc_hour).zfill(2)}:{str(utc_minute).zfill(2)}'
+        metar_dict['TimeUTC'] = utc_time
+        metar_dict['DayUTC'] = utc_day
+        metar_dict['HourUTC'] = utc_hour
+        metar_dict['MinuteUTC'] = utc_minute
+
+    # if wind_group:
+    #     wind_dir = int(wind_group[0][0:2])
+    #     wind_speed = int(wind_group[0][3:4])
+
+    if temp_group_auto:
+        temp_group_auto = temp_group_auto[0]
+        temp_c_str = f'{temp_group_auto[1:3]}.{temp_group_auto[4]}'
+        temp_c = float(temp_c_str)
+        dpt_c_str = f'{temp_group_auto[5:7]}.{temp_group_auto[8]}'
+        dpt_c = float(dpt_c_str)
+
+        metar_dict['TempAuto'] = temp_c
+        metar_dict['TempAuto_units'] = 'degC'
+        metar_dict['DptAuto'] = dpt_c
+        metar_dict['DptAuto_units'] = 'degC'
+
+    if wx_groups:
+        metar_wx = list()
+        for group in wx_groups:
+            wx_str = group
+            wx_str = wx_str.replace('-', 'Light ')
+            wx_str = wx_str.replace('+', 'Heavy ')
+            for wx_code in WX_CODES:
+                wx_str = wx_str.replace(wx_code, WX_CODES[wx_code] + ' ')
+
+            if wx_str[-1] == ' ':
+                wx_str = wx_str[:-1]
+
+            metar_wx.append(wx_str)
+
+        metar_dict['WeatherGroups'] = metar_wx
+        metar_dict['WeatherString'] = metar_wx.join(', ')
+
+    return metar_dict
+
+
+
+
 def destag_variable(stag_var: xr.DataArray, 
                     *,
                     stag_dim_name: str = None) -> xr.DataArray:
@@ -358,6 +470,7 @@ def define_hi_res_fig(lon_bounds: tuple[float, float],
         ax.add_feature(states, linewidth=1.0, edgecolor="black")
         ax.coastlines('50m', linewidth=1.5)
         ax.add_feature(cartopy.feature.LAKES.with_scale('10m'), linestyle='-', linewidth=0.5, alpha=1,edgecolor='blue',facecolor='none')
+        ax.add_feature(cartopy.feature.RIVERS.with_scale('10m'), linestyle='-', linewidth=0.5, alpha=1,edgecolor='blue',facecolor='none')
         ax.add_feature(cfeature.BORDERS, linewidth=1.5)
 
     if draw_gridlines:

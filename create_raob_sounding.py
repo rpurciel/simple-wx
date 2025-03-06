@@ -35,6 +35,7 @@ from datetime import datetime
 import argparse
 import csv
 import warnings
+warnings.filterwarnings("ignore")
 
 import xarray as xr
 import numpy as np
@@ -58,6 +59,23 @@ NETCDF_MODELS = ['wrf']
 GRIB2_MODELS = ['hrrr', 
                 'gfs', 
                 'era5']
+
+def destag_variable(stag_var: xr.DataArray) -> xr.DataArray:
+
+    from wrf import destagger
+
+    dims = stag_var.dims
+    for dim in dims:
+        if "stag" in dim:
+            stag_dim_idx = dims.index(dim)
+            
+    destag = destagger(stag_var, 
+                       stag_dim_idx,
+                       meta=True)
+
+    destag = destag.assign_coords(stag_var.coords)
+
+    return destag
 
 def get_file_time(input_file: str,
                   model: str) -> datetime:
@@ -320,9 +338,9 @@ def parse_hrrr_data(file_path: str,
     final_data.to_csv(os.path.join(save_dir, file_name), index=False, header=False)
 
     if previous_points is not None:
-        return (sel_pt_lat, sel_pt_lon), previous_points
+        return (sel_pt_lat, sel_pt_lon, point_index), previous_points
     else:
-        return (sel_pt_lat, sel_pt_lon)
+        return (sel_pt_lat, sel_pt_lon, point_index)
 
 def parse_gfs_data(file_path, **kwargs):
     raise NotImplementedError("Parsing of GFS data not yet implemented.")
@@ -495,9 +513,9 @@ def parse_era5_data(file_path: str,
     final_data.to_csv(os.path.join(save_dir, file_name), index=False, header=False)
 
     if previous_points is not None:
-        return (sel_pt_lat, sel_pt_lon), previous_points
+        return (sel_pt_lat, sel_pt_lon, point_index), previous_points
     else:
-        return (sel_pt_lat, sel_pt_lon)
+        return (sel_pt_lat, sel_pt_lon, point_index)
 
 def parse_wrf_data(file_path: str,
                    save_dir: str, 
@@ -524,12 +542,19 @@ def parse_wrf_data(file_path: str,
     # Get the index of the nearest point
     # (Again, the values are backwards you might expect because the 
     # coordinates are in (y, x) order.)
-    ([idx_y], [idx_x]) = np.where(c == np.min(c))
-    
-    #Now that we have the index location of the nearest point to the requested lat/lon, 
-    #we can use the select function sel to get all the data in the height coordinate at a single point in the dataset.
-    
-    point_data = wrf_data.sel(south_north=idx_y, west_east=idx_x)
+
+    # print(np.where(c == np.min(c)))
+    (idx_y, idx_x) = np.where(c == np.min(c))
+
+    idx_y = idx_y[0] if len(idx_y) > 1 else idx_y
+    idx_x = idx_x[0] if len(idx_x) > 1 else idx_x
+
+    wrf_data['U'] = destag_variable(wrf_data.U)
+    wrf_data['V'] = destag_variable(wrf_data.V)
+    wrf_data['PH'] = destag_variable(wrf_data.PH)
+    wrf_data['PHB'] = destag_variable(wrf_data.PHB)
+
+    point_data = wrf_data.sel(south_north=idx_y.flatten(), west_east=idx_x.flatten())
 
     sel_pt_lat = float(point_data.XLAT.values[0])
     sel_pt_lon = float(point_data.XLONG.values[0])
@@ -543,47 +568,123 @@ def parse_wrf_data(file_path: str,
     time_utc = pd.to_datetime(point_data.XTIME.values[0])
     date_str = datetime.strftime(time_utc, "%Y-%m-%d %H:%M:%S")
 
-    col_press_pa = units.Quantity(point_data.P.data + point_data.PB.data, 'pascal')
+    col_press = point_data.P.data + point_data.PB.data
+    col_press = col_press.flatten()
+
+    col_press_pa = units.Quantity(col_press, 'pascal')
     col_press_hpa = col_press_pa.to(ureg('hectopascal'))
 
-    col_theta_k = units.Quantity(point_data.T.data, 'K')
+    col_theta_k = units.Quantity(point_data.T.data.flatten() + 300, 'K')
+    col_theta_c = col_theta_k.to(ureg('degC'))
 
     col_temp_k = mpcalc.temperature_from_potential_temperature(col_press_hpa,
-                                                               col_theta_k)
+                                                             col_theta_k)
+
     col_temp_c = col_temp_k.to(ureg('degC'))
-    print(col_temp_c)
 
-    MOLECULAR_WEIGHT_RATIO_OF_WATER_VAPOR_TO_DRY_AIR = 0.622
+    # MOLECULAR_WEIGHT_RATIO_OF_WATER_VAPOR_TO_DRY_AIR = 0.622
 
-    col_water_vapor_mixing_ratio_kg_kg = units.Quantity(point_data.QVAPOR.data, 'kg/kg')
-    col_vapor_pressure = col_press_pa * col_water_vapor_mixing_ratio_kg_kg / (MOLECULAR_WEIGHT_RATIO_OF_WATER_VAPOR_TO_DRY_AIR + col_water_vapor_mixing_ratio_kg_kg)
-    print(col_vapor_pressure)
+    col_wv_mixing_ratio_kg_kg = units.Quantity(point_data.QVAPOR.data.flatten(), 'kg/kg')
+    # col_vapor_pressure = col_press_pa * col_wv_mixing_ratio_kg_kg / (MOLECULAR_WEIGHT_RATIO_OF_WATER_VAPOR_TO_DRY_AIR + col_water_vapor_mixing_ratio_kg_kg)
+    # print(col_vapor_pressure)
 
-    rh = mpcalc.relative_humidity_from_mixing_ratio(col_press_pa,
-                                                    col_temp_c,
-                                                    col_water_vapor_mixing_ratio_kg_kg)
+    col_rh = mpcalc.relative_humidity_from_mixing_ratio(col_press_hpa,
+                                                        col_temp_c,
+                                                        col_wv_mixing_ratio_kg_kg)
 
-    print(rh)
+    col_rh_pct = units.Quantity(col_rh, '%')
 
-    col_u_ms = units.Quantity(point_data.U.data, 'm/s')
-    col_v_ms = units.Quantity(point_data.V.data, 'm/s')
+    col_u_ms = units.Quantity(point_data.U.data.flatten(), 'm/s')
+    col_v_ms = units.Quantity(point_data.V.data.flatten(), 'm/s')
     col_u_kts = col_u_ms.to(ureg('kts'))
     col_v_kts = col_v_ms.to(ureg('kts'))
 
-    col_geopot = units.Quantity(point_col.gh.data, 'm**2/s**2')
+    # col_perturb_geopot = units.Quantity(point_col.PH.data, 'm**2/s**2')
+    # col_base_geopot = units.Quantity(point_col.PHB.data, 'm**2/s**2')
 
-    sfc_press_pa = units.Quantity(point_sfc.sp.data, 'pascal')
+    col_geopot = units.Quantity(point_data.PHP.data.flatten(), 'm**2/s**2')
+    col_layer_height_msl = mpcalc.geopotential_to_height(col_geopot)
+
+    sfc_press_pa = units.Quantity(point_data.PSFC.data.flatten(), 'pascal')
     sfc_press_hpa = sfc_press_pa.to(ureg('hectopascal'))
 
-    sfc_temp_k = units.Quantity(point_2m.t2m.data, 'K')
-    sfc_dpt_k = units.Quantity(point_2m.d2m.data, 'K')
+    sfc_temp_k = units.Quantity(point_data.T2.data.flatten(), 'K')
     sfc_temp_c = sfc_temp_k.to(ureg('degC'))
-    sfc_dpt_c = sfc_dpt_k.to(ureg('degC'))
+   
+    sfc_wv_mixing_ratio_kg_kg = units.Quantity(point_data.Q2.data.flatten(), 'kg/kg')
+    sfc_rh = mpcalc.relative_humidity_from_mixing_ratio(sfc_press_hpa,
+                                                        sfc_temp_c,
+                                                        sfc_wv_mixing_ratio_kg_kg)
+    sfc_rh_pct = units.Quantity(sfc_rh, '%')
 
-    sfc_u_ms = units.Quantity(point_10m.u10.data, 'm/s')
-    sfc_v_ms = units.Quantity(point_10m.v10.data, 'm/s')
+    sfc_u_ms = units.Quantity(point_data.U10.data.flatten(), 'm/s')
+    sfc_v_ms = units.Quantity(point_data.V10.data.flatten(), 'm/s')
     sfc_u_kts = sfc_u_ms.to(ureg('kts'))
     sfc_v_kts = sfc_v_ms.to(ureg('kts'))
+
+    sfc_hgt = units.Quantity(point_data.HGT.data.flatten(), 'm')
+
+    surface_data = pd.DataFrame(data=[sfc_press_hpa.magnitude,
+                                      sfc_temp_c.magnitude,
+                                      sfc_rh_pct.magnitude,
+                                      sfc_u_kts.magnitude,
+                                      sfc_v_kts.magnitude,
+                                      sfc_hgt.magnitude])
+
+    column_data = pd.DataFrame(data=[col_press_hpa.magnitude,
+                                     col_temp_c.magnitude,
+                                     col_rh_pct.magnitude,
+                                     col_u_kts.magnitude,
+                                     col_v_kts.magnitude,
+                                     col_layer_height_msl.magnitude])
+
+    #remove data that is below the surface level
+    column_data = column_data.T
+    column_data = column_data[column_data[0] < sfc_press_hpa.magnitude[0]]
+
+    sounding_data = pd.concat([surface_data.T, column_data],
+                              axis=0,
+                              ignore_index=True)
+
+    sounding_data = sounding_data.round(4)
+    print(sounding_data)
+
+    if sel_pt_lat >= 0:
+        lat_hemisphere = 'N'
+    else:
+        lat_hemisphere = 'S'
+
+    if sel_pt_lon >= 0:
+        lon_hemisphere = 'W'
+    else:
+        lon_hemisphere = 'E'
+
+    internal_name = f'Pt: {round(lat, 4)} {round(lon, 4)} Gd: {round(sel_pt_lat, 4)} {round(sel_pt_lon, 4)} Md: WRF (No. {point_index})'
+
+    header = {0:['RAOB/CSV','DTG','LAT','LON','ELEV','MOISTURE','WIND','GPM','MISSING','RAOB/DATA','PRES'],
+              1:[internal_name,date_str,np.abs(sel_pt_lat),np.abs(sel_pt_lon),sfc_hgt.magnitude[0],'RH','kts','MSL',-999,'','TEMP'],
+              2:['','',lat_hemisphere,lon_hemisphere,'m','','U/V','','','','RH'],
+              3:['','','','','','','','','','','UU'],
+              4:['','','','','','','','','','','VV'],
+              5:['','','','','','','','','','','GPM']}
+
+    header_data = pd.DataFrame(data=header)
+
+    final_data = pd.concat([header_data, sounding_data],
+                           axis=0,
+                           ignore_index=True)
+
+    file_name = f'WRF_RAOB_pt{point_index}_{datetime.strftime(point_time, "%Y%m%d_%H%M%S")}_frm{datetime.strftime(time_utc, "%Y%m%d_%H%M%S")}.csv'
+
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    final_data.to_csv(os.path.join(save_dir, file_name), index=False, header=False)
+
+    if previous_points is not None:
+        return (sel_pt_lat, sel_pt_lon, point_index), previous_points
+    else:
+        return (sel_pt_lat, sel_pt_lon, point_index)
 
 if __name__ == "__main__":
 
@@ -871,7 +972,7 @@ if __name__ == "__main__":
         print("Verification plot generated.")
 
     if args.save_gp:
-        grid_df = pd.DataFrame(data=grid_pts, columns=['lat', 'lon'])
+        grid_df = pd.DataFrame(data=grid_pts, columns=['lat', 'lon', 'num'])
         grid_df.to_csv(os.path.join(save_dir, f"RAOB_ModelSoundings_Gridpoints_{args.model.upper()}.csv"), index=None)
         print("Used grid points saved to file.")
 

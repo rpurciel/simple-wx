@@ -13,21 +13,6 @@ and historical flashes use the OLD_FLASH_STYLE.
 NEW_FLASH_STYLE = {'markersize': 8, 'marker': 'x', 'color': 'red'}
 OLD_FLASH_STYLE = {'markersize': 4, 'marker': 'x', 'color': 'darkgray'}
 
-'''
-Used to set the style of any user input points shown on the map.
-POINT_STYLE is used for the point(s), and POINT_LABEL_STYLE is used for any
-point label(s) given. No labels are shown if POINT_LABEL_VISIBLE is False.
-'''
-POINT_STYLE = {'color': 'black', 'markersize': 8}
-POINT_LABEL_VISIBLE = True
-POINT_LABEL_STYLE = {'color': 'black', 'fontsize': 10, 'fontweight': 'bold'}
-DRAW_LABEL_ARROWS = True
-
-## Set the positioning of the labels relative to the points being plotted
-## (Default: X=0.2, Y=0.1)
-X_LABEL_OFFSET = 0.4
-Y_LABEL_OFFSET = 0.0
-
 
 
 
@@ -55,6 +40,9 @@ import glob
 from datetime import datetime, timedelta
 import argparse
 import csv
+import warnings
+import json
+warnings.simplefilter("ignore")
 
 import pandas as pd
 import xarray as xr
@@ -70,7 +58,9 @@ from cartopy.feature import NaturalEarthFeature
 from tqdm.auto import tqdm
 from adjustText import adjust_text 
 
-from __internal_funcs import (plot_towns, draw_logo, plot_points, define_hi_res_fig)
+from __internal_funcs import (plot_towns, draw_logo, plot_points,
+                              define_hi_res_fig,
+                              define_gearth_compat_fig, save_figs_to_kml)
 
 np.seterr(divide = 'ignore', invalid='ignore')
 mpl.use('agg')
@@ -117,8 +107,20 @@ def plot_single_time_glm(file_path: str,
     flash_lats = data.variables['flash_lat'][:]
     flash_lons = data.variables['flash_lon'][:]
 
-    fig, ax = define_hi_res_fig((bbox[2], bbox[3]),
-                                (bbox[0], bbox[1]))
+    if kwargs.get('save_to_kmz'):  
+        fig, ax, cbfig, cbax = define_gearth_compat_fig((bbox[2], bbox[3]),
+                                                        (bbox[0], bbox[1]))
+
+        cbar_opts = {'rotation': -90, 'color': 'k', 'labelpad': 20}
+
+    else:
+        fig, ax = define_hi_res_fig((bbox[2], bbox[3]),
+                                    (bbox[0], bbox[1]))
+
+        cbfig = fig
+        cbax = None
+
+        cbar_opts = {}
     
     flashes = ax.plot(flash_lats, 
                       flash_lons,
@@ -130,33 +132,52 @@ def plot_single_time_glm(file_path: str,
 
     if points:
         plot_points(plt, ax,
-            points,
-            x_label_offset=X_LABEL_OFFSET,
-            y_label_offset=Y_LABEL_OFFSET,
-            draw_labels=POINT_LABEL_VISIBLE,
-            draw_arrows=DRAW_LABEL_ARROWS,
-            point_style=POINT_STYLE,
-            point_label_style=POINT_LABEL_STYLE)
+                    points,
+                    **kwargs)
 
-    plot_logo(ax)
+    if kwargs.get('save_to_kmz'):
 
-    plot_towns(ax, 
-               (bbox[2], bbox[3]),
-               (bbox[0], bbox[1]), 
-               scale_rank=7)
+        file_name = sat_id + "_GLM_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
+        layer_name = f'{orbital_slot.replace("-Test", "")} ({sat_id.replace("G", "GOES-")})\nGLM Detected Lightning Flashes'
+        layer_desc = f'Starting At {scan_start.strftime("%d %B %Y %H:%M:%S UTC")}\nThrough {scan_end.strftime("%d %B %Y %H:%M:%S UTC")}'
 
-    ax.set_title(f'{orbital_slot.replace("-Test", "")} ({sat_id.replace("G", "GOES-")})\nDetected Lightning "Flashes"', loc='left', fontweight='bold', fontsize=15)
-    ax.set_title(f'Starting At {scan_start.strftime("%d %B %Y %H:%M:%S UTC")}\nThrough {scan_end.strftime("%d %B %Y %H:%M:%S UTC")}', loc='right')
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        dest_path = os.path.join(save_dir, file_name + ".kmz")
+
+        save_figs_to_kml(dest_path,
+                         (bbox[2], bbox[3]),
+                         (bbox[0], bbox[1]),
+                         fig,
+                         [layer_name],
+                         [layer_desc],
+                         colorbar_fig=cbfig if kwargs.get('colorbar_visible') else None)
+
+        plt.close(fig)
+        if cbfig:
+            plt.close(cbfig)
+
+    else:
     
-    file_name = sat_id + "_GLM_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
-    
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+        plot_towns(ax, 
+                  (bbox[2], bbox[3]),
+                  (bbox[0], bbox[1]), 
+                  scale_rank=kwargs.pop('plot_towns_scale_rank', 5))
+        draw_logo(ax)
 
-    dest_path = os.path.join(save_dir, file_name + ".png")
+        ax.set_title(f'{orbital_slot.replace("-Test", "")} ({sat_id.replace("G", "GOES-")})\nDetected Lightning Flashes', loc='left', fontweight='bold', fontsize=15)
+        ax.set_title(f'Starting At {scan_start.strftime("%d %B %Y %H:%M:%S UTC")}\nThrough {scan_end.strftime("%d %B %Y %H:%M:%S UTC")}', loc='right')
+        
+        file_name = sat_id + "_GLM_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
+        
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
 
-    fig.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
-    plt.close(fig)
+        dest_path = os.path.join(save_dir, file_name + ".png")
+
+        fig.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
+        plt.close(fig)
 
 def plot_cumulative_glm(file_path: str, 
                         save_dir: str, 
@@ -215,14 +236,28 @@ def plot_cumulative_glm(file_path: str,
     flash_lats = data.variables['flash_lat'].values
     flash_lons = data.variables['flash_lon'].values
 
-    fig, ax = define_hi_res_fig((bbox[2], bbox[3]),
-                                (bbox[0], bbox[1]))
+    if kwargs.get('save_to_kmz'):  
+        fig, ax, cbfig, cbax = define_gearth_compat_fig((bbox[2], bbox[3]),
+                                                        (bbox[0], bbox[1]))
 
+        cbar_opts = {'rotation': -90, 'color': 'k', 'labelpad': 20}
+
+    else:
+        fig, ax = define_hi_res_fig((bbox[2], bbox[3]),
+                                    (bbox[0], bbox[1]))
+
+        cbfig = fig
+        cbax = None
+
+        cbar_opts = {}
+    
     flashes = ax.plot(flash_lons, 
                       flash_lats,
                       linestyle='None',
                       transform=crs.PlateCarree(), 
                       zorder=15)
+
+
 
     mpl.artist.setp(flashes, **NEW_FLASH_STYLE)
 
@@ -230,12 +265,60 @@ def plot_cumulative_glm(file_path: str,
     this_frame_data = {'flash_lat': flash_lats, 'flash_lon': flash_lons, 'flash_time': scan_start}
     this_frame_df = pd.DataFrame(data=this_frame_data)
 
+    lon_bounds = (bbox[0], bbox[1])
+    lat_bounds = (bbox[2], bbox[3])
+
+    lat_max_E = max(lat_bounds)
+    lat_min_W = min(lat_bounds)
+    lon_max_N = max(lon_bounds)
+    lon_min_S = min(lon_bounds)
+
+    if kwargs.get('timestamp_flashes'):  
+        for flash in this_frame_df.itertuples(name=None, index=False):
+            flash_lat = float(flash[1])
+            flash_lon = float(flash[0])
+
+            if (flash_lat >= lat_min_W) and (flash_lat <= lat_max_E) and (flash_lon >= lon_min_S) and (flash_lon <= lon_max_N):
+                pt_label = ax.annotate(scan_start,
+                                       xy=(flash_lat, flash_lon),
+                                       xytext=(0, -50), 
+                                       xycoords='data',
+                                       textcoords='offset pixels',
+                                       horizontalalignment="center",
+                                       verticalalignment="top",
+                                       fontsize=8,
+                                       color="red",
+                                       transform=crs.PlateCarree(),
+                                       annotation_clip=True, 
+                                       zorder=14)
+
     if not start_of_period:
         hist_flashes = ax.plot(hist_flash_filtered['flash_lon'], 
                                hist_flash_filtered['flash_lat'],
                                linestyle='none',
                                transform=crs.PlateCarree(), 
                                zorder=10)
+
+        if kwargs.get('timestamp_flashes'):
+            for flash in hist_flash_filtered.itertuples(name=None, index=False):
+                flash_lat = float(flash[1])
+                flash_lon = float(flash[0])
+
+                if (flash_lat >= lat_min_W) and (flash_lat <= lat_max_E) and (flash_lon >= lon_min_S) and (flash_lon <= lon_max_N):
+                    pt_label = ax.annotate(flash[2].strftime("%Y-%m-%d %H:%M:%S"), 
+                                           xy=(flash_lat, flash_lon),
+                                           xytext=(0, -30), 
+                                           xycoords='data',
+                                           textcoords='offset pixels',
+                                           horizontalalignment="center",
+                                           verticalalignment="top",
+                                           fontsize=6,
+                                           fontstyle='italic',
+                                           color="gray",
+                                           transform=crs.PlateCarree(),
+                                           annotation_clip=True, 
+                                           zorder=9)
+
 
         mpl.artist.setp(hist_flashes, **OLD_FLASH_STYLE)
         hist_flashes_df = pd.concat([hist_flashes_df, this_frame_df], ignore_index=True)
@@ -245,44 +328,66 @@ def plot_cumulative_glm(file_path: str,
     if points:
         plot_points(plt, ax,
                     points,
-                    x_label_offset=X_LABEL_OFFSET,
-                    y_label_offset=Y_LABEL_OFFSET,
-                    draw_labels=POINT_LABEL_VISIBLE,
-                    draw_arrows=DRAW_LABEL_ARROWS,
-                    point_style=POINT_STYLE,
-                    point_label_style=POINT_LABEL_STYLE)
+                    **kwargs)
+
+    if kwargs.get('save_to_kmz'):
+
+        file_name = sat_id + "_GLM_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
+        layer_name = f'{orbital_slot.replace("-Test", "")} ({sat_id.replace("G", "GOES-")})\nCumulative Detected Lightning Flashes'
+        layer_desc = f'Starting At {period_st.strftime("%d %B %Y %H:%M:%S UTC")}\nThrough {scan_end.strftime("%d %B %Y %H:%M:%S UTC")}\n{cum_minutes} Min. Rolling Period'
+
+
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        dest_path = os.path.join(save_dir, file_name + ".kmz")
+
+        save_figs_to_kml(dest_path,
+                         (bbox[2], bbox[3]),
+                         (bbox[0], bbox[1]),
+                         fig,
+                         [layer_name],
+                         [layer_desc],
+                         colorbar_fig=cbfig if kwargs.get('colorbar_visible') else None)
+
+        plt.close(fig)
+        if cbfig:
+            plt.close(cbfig)
+
+    else:
     
-    plot_towns(ax, 
-               (bbox[2], bbox[3]),
-               (bbox[0], bbox[1]), 
-               scale_rank=7)
+        plot_towns(ax, 
+                  (bbox[2], bbox[3]),
+                  (bbox[0], bbox[1]), 
+                  scale_rank=kwargs.pop('plot_towns_scale_rank', 5))
+        draw_logo(ax)
 
-    draw_logo(ax)
+        ax.set_title(f'{orbital_slot.replace("-Test", "")} ({sat_id.replace("G", "GOES-")})\nCumulative Detected Lightning "Flashes"', loc='left', fontweight='bold', fontsize=15)
+        ax.set_title(f'Starting At {period_st.strftime("%d %B %Y %H:%M:%S UTC")}\nThrough {scan_end.strftime("%d %B %Y %H:%M:%S UTC")}', loc='right')
+        ax.set_title(f'{cum_minutes} Min. Rolling Period', loc='center', fontsize=8, fontstyle='italic')
+        
+        file_name = sat_id + "_GLM_" + period_st.strftime('%Y%m%d_%H%M%S%Z') + "_to" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
+        
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
 
-    ax.set_title(f'{orbital_slot.replace("-Test", "")} ({sat_id.replace("G", "GOES-")})\nCumulative Detected Lightning "Flashes"', loc='left', fontweight='bold', fontsize=15)
-    ax.set_title(f'Starting At {period_st.strftime("%d %B %Y %H:%M:%S UTC")}\nThrough {scan_end.strftime("%d %B %Y %H:%M:%S UTC")}', loc='right')
-    ax.set_title(f'{cum_minutes} Min. Rolling Period', loc='center', fontsize=8, fontstyle='italic')
-    
-    file_name = sat_id + "_GLM_" + period_st.strftime('%Y%m%d_%H%M%S%Z') + "_to" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
-    
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+        dest_path = os.path.join(save_dir, file_name + ".png")
 
-    dest_path = os.path.join(save_dir, file_name + ".png")
-
-    fig.savefig(dest_path, bbox_inches="tight", dpi=FILE_DPI)
-    plt.close(fig)
+        fig.savefig(dest_path, 
+                    bbox_inches="tight", 
+                    dpi=FILE_DPI)
+        plt.close(fig)
 
     return hist_flashes_df
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description=f'Plot GOES 16/17/18 GLM Data, either for single time periods or cumulative over all input data.')
-    parser.add_argument('-s', '--single', 
+    parser.add_argument('--single', 
                         help='plot flashes for single-time periods', 
                         action='store_true',
                         default=False)
-    parser.add_argument('-c', '--cumulative', 
+    parser.add_argument('--cumulative', 
                         help=f'plot cumulative flashes over a rolling time period, optionally specified (default: {DEFAULT_HISTORY_MINUTES} min)', 
                         type=int,
                         nargs='?',
@@ -307,9 +412,21 @@ if __name__ == "__main__":
                         metavar='file_path',
                         dest='points_file',
                         default=None)
-    parser.add_argument('--save-kmz', 
+    parser.add_argument('--settings-from-file',
+                        help='specify a JSON file to read in plot settings from.',
+                        type=str,
+                        metavar='file_path',
+                        dest='settings_file',
+                        default=None)
+    parser.add_argument('--timestamp-flashes', 
                         help='save all detected flashes in a kmz', 
                         action='store_true',
+                        dest="timestamp_flashes",
+                        default=False)
+    parser.add_argument('--save-as-kmz', 
+                        help='save all detected flashes in a kmz', 
+                        action='store_true',
+                        dest='save_to_kmz',
                         default=False)
     parser.add_argument('input_file_directory',  
                         help='directory to read input files from',
@@ -366,18 +483,32 @@ if __name__ == "__main__":
             with open(args.points_file, newline='') as pointcsv:
                 reader = csv.reader(pointcsv, delimiter=',')
                 for row in reader:
-                    if row[2] == "" or row[2].isspace():
-                        marker = 'x'
-                    else:
-                        marker = row[2]
 
-                    if row[3] == "" or row[3].isspace():
-                        point = (float(row[0]), float(row[1]), marker, None)
-                    else:
-                        point = (float(row[0]), float(row[1]), marker, row[3])
+                    point = (float(row[0]),
+                             float(row[1]),
+                             row[2] if len(row) > 2 else None,
+                             row[3] if len(row) > 3 else None,
+                             row[4] if len(row) > 4 else None,
+                             row[5] if len(row) > 5 else None)
                     points += [point]
         except Exception as err:
             raise err
+
+    if args.settings_file:
+        if ('default' in args.settings_file) and ('/' not in args.settings_file):
+            pass
+        try:
+            with open(args.settings_file, newline='') as settingsjson:
+                user_settings = json.load(settingsjson)
+        except Exception as err:
+            raise err
+    else:
+        user_settings = dict()
+
+    if args.save_to_kmz:
+        user_settings.update({'save_to_kmz': True})
+    if args.timestamp_flashes:
+        user_settings.update({'timestamp_flashes': True})
 
     input_files = sorted(glob.glob(f'{input_dir}*.nc'))
     num_input_files = len(input_files)
@@ -394,17 +525,19 @@ if __name__ == "__main__":
                                                 bbox, 
                                                 hist_data, 
                                                 cum_period,
-                                                start_of_period=start_of_period)
+                                                start_of_period=start_of_period,
+                                                **user_settings)
                 if start_of_period:
                     start_of_period = False
             else:
                 plot_single_time_glm(input_file_path, 
                                      save_dir, 
                                      points, 
-                                     bbox)
+                                     bbox,
+                                     **user_settings)
             progress.update()
 
-    if args.save_kmz:
+    if args.save_to_kmz:
         hist_data.to_csv(os.path.join(save_dir, "GLM_all_flashes.csv"), index=None)
 
     print("Done!")

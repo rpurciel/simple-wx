@@ -245,7 +245,7 @@ if __name__ == "__main__":
             this_ts = time.to_timestamp()
 
             if product == "goes":
-                protokey = f"ABI-L2-MCMIPC/{str(this_ts.year).zfill(4)}/{str(this_ts.day_of_year).zfill(3)}/{str(this_ts.hour).zfill(2)}/*"
+                protokey = f"ABI-L2-MCMIPM/{str(this_ts.year).zfill(4)}/{str(this_ts.day_of_year).zfill(3)}/{str(this_ts.hour).zfill(2)}/*"
                 files = list_aws_keys(bucket, protokey, glob_match=True)
                 for file in files:
                     keys += [file]
