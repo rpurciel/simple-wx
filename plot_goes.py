@@ -5,6 +5,12 @@ DEFAULT_TOWN_SCALE_RANK = 5
 ## Set the DPI of the saved output file
 DEFAULT_FILE_DPI = 300
 
+## Set to True if you want the 2 seperate Mesoscale Domain Sectors (MDS)
+## saved in different folders, as data for both is typically downloaded
+## together.
+## (Default: True)
+SAVE_MDS_IN_SEP_FOLDERS = True
+
 
 
 
@@ -152,6 +158,18 @@ def plot_single_band_goes(file_path: str,
     file_created = datetime.strptime(data.date_created, '%Y-%m-%dT%H:%M:%S.%fZ')
     orbital_slot = data.orbital_slot #GOES-East, GOES-West, GOES-Test, etc.
     sat_id = data.platform_ID #G18, G17, G16, etc.
+    sat_scene_id = data.scene_id #CONUS, Mesoscale, etc.
+
+    if sat_scene_id == "Mesoscale":
+        meso_num = int(file_path[file_path.find('MCMIPM')+6:file_path.find('MCMIPM')+7])
+        meso_str_title = f" Mesoscale Domain Sector {meso_num}"
+        meso_str_file = f"_MDS0{meso_num}"
+
+        if SAVE_MDS_IN_SEP_FOLDERS:
+            save_dir = f'{save_dir}MDS_0{meso_num}'
+    else:
+        meso_str_title = ""
+        meso_str_file = ""
 
     proj_info = data.variables['goes_imager_projection']
     
@@ -271,8 +289,8 @@ def plot_single_band_goes(file_path: str,
 
     if kwargs.get('save_to_kmz'):
 
-        file_name = sat_id + "_" + sel_band_str + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
-        layer_name = sat_id.replace("G", "GOES-") + " image at " + scan_end.strftime('%d %B %Y %H:%M UTC ')
+        file_name = sat_id + meso_str_file + "_" + sel_band_str + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
+        layer_name = sat_id.replace("G", "GOES-") + meso_str_title + " image at " + scan_end.strftime('%d %B %Y %H:%M UTC ')
         layer_desc = IMPLEMENTED_BANDS[str(band)]
 
         if not os.path.exists(save_dir):
@@ -300,12 +318,12 @@ def plot_single_band_goes(file_path: str,
                   scale_rank=kwargs.pop('plot_towns_scale_rank', 5))
         draw_logo(ax)
 
-        title_info = orbital_slot.replace("-Test", "") + " (" + sat_id.replace("G", "GOES-") + ")\n" + IMPLEMENTED_BANDS[str(band)]
+        title_info = orbital_slot.replace("-Test", "") + " (" + sat_id.replace("G", "GOES-") + ")" + meso_str_title + "\n" + IMPLEMENTED_BANDS[str(band)]
         
         ax.set_title(title_info, loc='left', fontweight='bold', fontsize=15)
         ax.set_title('{}'.format(scan_end.strftime('%d %B %Y %H:%M UTC ')), loc='right')
         
-        file_name = sat_id + "_" + sel_band_str + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
+        file_name = sat_id + meso_str_file + "_" + sel_band_str + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
         
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
@@ -332,6 +350,19 @@ def plot_composite_goes(file_path: str,
     file_created = datetime.strptime(data.date_created, '%Y-%m-%dT%H:%M:%S.%fZ')
     orbital_slot = data.orbital_slot #GOES-East, GOES-West, GOES-Test, etc.
     sat_id = data.platform_ID #G18, G17, G16, etc.
+    sat_scene_id = data.scene_id #CONUS, Mesoscale, etc.
+
+    if sat_scene_id == "Mesoscale":
+        meso_num = int(file_path[file_path.find('MCMIPM')+6:file_path.find('MCMIPM')+7])
+        meso_str_title = f" Mesoscale Domain Sector {meso_num}"
+        meso_str_file = f"_MDS0{meso_num}"
+
+        if SAVE_MDS_IN_SEP_FOLDERS:
+            save_dir = f'{save_dir}MDS_0{meso_num}'
+
+    else:
+        meso_str_title = ""
+        meso_str_file = ""
 
     red, green, blue, pallete, human_product_name = _calculate_composite_product_data(data, product)
 
@@ -350,7 +381,6 @@ def plot_composite_goes(file_path: str,
     rgb_composite = np.stack([red, green, blue], axis=2) #Create the composite image data using calculated data above
 
     bbox_wesn = [bbox[3], bbox[2], bbox[1], bbox[0]]
-    title_info = orbital_slot.replace("-Test", "") + " (" + sat_id.replace("G", "GOES-") + ")\n" + human_product_name + " Composite"
 
     if kwargs.get('save_to_kmz'):  
         fig, ax, cbfig, cbax = define_gearth_compat_fig((bbox[2], bbox[3]),
@@ -395,7 +425,7 @@ def plot_composite_goes(file_path: str,
 
     if kwargs.get('save_to_kmz'):
 
-        file_name = sat_id + "_" + sel_band_str + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
+        file_name = sat_id + meso_str_file + "_" + sel_band_str + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
         layer_name = sat_id.replace("G", "GOES-") + " image at " + scan_end.strftime('%d %B %Y %H:%M UTC ')
         layer_desc = f'{human_product_name} Composite'
 
@@ -425,11 +455,11 @@ def plot_composite_goes(file_path: str,
         draw_logo(ax)
     
         
-        title_info = orbital_slot.replace("-Test", "") + " (" + sat_id.replace("G", "GOES-") + ")\n" + human_product_name + " Composite"
+        title_info = orbital_slot.replace("-Test", "") + " (" + sat_id.replace("G", "GOES-") + ")" + meso_str_title + "\n" + human_product_name + " Composite"
         ax.set_title(title_info, loc='left', fontweight='bold', fontsize=15)
         ax.set_title('{}'.format(scan_end.strftime('%d %B %Y %H:%M:%S UTC ')), loc='right')
         
-        file_name = sat_id + "_" + product + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
+        file_name = sat_id + meso_str_file + "_" + product + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
         
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)

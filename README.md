@@ -4,7 +4,7 @@
 <summary>Completeness</summary>
 
 | Script | Completeness | Next Goal |
-|---|:---:|---|---|
+|---|---|---|---|
 |`airmet_to_json_wizard.py`| 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ | Clean code |
 |`create_meteogram_data.py`| 🟩🟩🟩🟩🟩⬜⬜⬜⬜⬜ | Model support (ERA5/GFS/WRF/+), other variables, clean code |
 |`create_movie.py`| 🟩🟩🟩🟩🟩🟩🟩⬜⬜⬜ | Clean code, options for more video formats |
