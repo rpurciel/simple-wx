@@ -85,7 +85,7 @@ import cartopy.io.shapereader as shpreader
 from cartopy.feature import NaturalEarthFeature
 import metpy
 from metpy.calc import (smooth_n_point, wind_speed, 
-                        geopotential_to_height, vertical_velocity_pressure)
+                        geopotential_to_height, vertical_velocity)
 import metpy.calc as mpcalc
 from metpy.units import units
 import netCDF4
@@ -645,9 +645,12 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
                            kwargs.pop('cldcvr_level_max', 1.1),
                            kwargs.pop('cldcvr_level_step', 0.1))
 
+        var = data.variables[vtable['cldcvr'][0]][:]
+        var_units = units.Quantity(var, vtable['cldcvr'][1])
+
         if VARIABLE_SMOOTHING == True:
             var_contourf = ax.contourf(lon, lat, 
-                                       smooth_n_point(data.variables[vtable['cldcvr'][0]][:],
+                                       smooth_n_point(var_units.magnitude,
                                                       SMOOTHING_POINTS,
                                                       SMOOTHING_PASSES), 
                                        levels=levels, 
@@ -656,7 +659,7 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
                                        zorder=kwargs.pop('cf_zorder', CONTOURF_ZORDER))
         else:
             var_contourf = ax.contourf(lon, lat, 
-                                       data.variables[vtable['cldcvr']][:], 
+                                       var_units.magnitude, 
                                        levels=levels, 
                                        transform=crs.PlateCarree(), 
                                        cmap=kwargs.pop('cldcvr_pallete', cm.Blues), 
@@ -669,9 +672,9 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
                           ticks=levels[::2], 
                           orientation=kwargs.pop('colorbar_orientation', 'vertical'), 
                           shrink=0.77)
-        cb.set_label('Fraction of Cloud Cover', size='x-large', **cbar_opts)
+        cb.set_label(f'Fraction of Cloud Cover ({unit:~C})', size='x-large', **cbar_opts)
 
-        prodstr += "#Fraction of Cloud Cover (shaded)"
+        prodstr += f"#Fraction of Cloud Cover (({unit:~C}), shaded contours)"
         prodabbr += "_CC"
 
     if "rh_cf" in products:
@@ -822,12 +825,12 @@ def draw_contourf_lines(fig: mpl.figure.Figure,
                            kwargs.pop('vv_level_step', 10))
 
         if model == "hrrr":
-            vv = vertical_velocity(data[vtable['vv']],
-                                   data[vtable['pres']],
-                                   data[vtable['temp']],
-                                   data[vtable['mxgrat']])
+            vv = vertical_velocity(data[vtable['vv'][0]],
+                                   data[vtable['pressure'][0]],
+                                   data[vtable['temp'][0]],
+                                   data[vtable['mxgrat'][0]])
 
-            vv = vv.magnitude * 196.9 #m/s to ft/min
+            vv = vv.values * 196.9 #m/s to ft/min
 
         if VARIABLE_SMOOTHING == True:
             var_contourf = ax.contourf(lon, lat, 
@@ -891,7 +894,7 @@ def draw_contour_lines(fig: mpl.figure.Figure,
                            kwargs.pop('gpm_level_max', sel_level + 500),
                            kwargs.pop('gpm_level_step', 50))
 
-        gpm = geopotential_to_height(data[vtable['gpm']])
+        gpm = data[vtable['gpm'][0]]
 
         contours = ax.contour(lon, lat, 
                                gpm, 
@@ -1070,8 +1073,8 @@ def draw_wind_display(fig: mpl.figure.Figure,
                                       zorder=kwargs.pop('wind_display_zorder', SHAPE_ZORDER))
         prodabbr += "_Wd"
 
-    obj.set_path_effects([PathEffects.withStroke(linewidth=4, 
-                                                 foreground=kwargs.pop('wind_display_outline_coor', 'black'))])
+    # obj.set_path_effects([PathEffects.withStroke(linewidth=4, 
+    #                                              foreground=kwargs.pop('wind_display_outline_coor', 'black'))])
 
     return prodstr, prodabbr
 
@@ -1434,8 +1437,8 @@ def draw_surface_wind_display(fig: mpl.figure.Figure,
                                       zorder=kwargs.pop('wind_display_zorder', SHAPE_ZORDER))
         prodabbr += "_Wd"
 
-    obj.set_path_effects([PathEffects.withStroke(linewidth=4, 
-                                                 foreground=kwargs.pop('wind_display_outline_coor', 'black'))])
+    # obj.set_path_effects([PathEffects.withStroke(linewidth=4, 
+    #                                              foreground=kwargs.pop('wind_display_outline_coor', 'black'))])
 
     return prodstr, prodabbr
 

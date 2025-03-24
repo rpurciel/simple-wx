@@ -54,6 +54,7 @@ warnings.simplefilter("ignore")
 
 import xarray as xr
 import numpy as np
+import pandas as pd
 import numpy.ma as ma
 import metpy
 import matplotlib
@@ -72,7 +73,7 @@ from adjustText import adjust_text
 import cmasher as cmr
 
 from __internal_funcs import (plot_towns, draw_logo, plot_points,
-                              define_hi_res_fig,
+                              define_hi_res_fig, get_time_point,
                               define_gearth_compat_fig, save_figs_to_kml)
 
 matplotlib.use('agg')
@@ -287,10 +288,51 @@ def plot_single_band_goes(file_path: str,
                     points,
                     **kwargs)
 
+    if kwargs.get('loc_points'):
+        loc_points = kwargs.get('loc_points')
+
+        this_loc_point = get_time_point(loc_points,
+                                        scan_start.strftime('%Y-%m-%d %H:%M:%S'))
+
+        print(this_loc_point)
+
+        this_loc_delta = this_loc_point[0]
+
+        print(this_loc_delta)
+
+        this_pt = this_loc_point[1][1]    
+        this_time = this_loc_point[1][0]    
+        this_time_dt = datetime.strptime(this_time, "%Y-%m-%d %H:%M:%S")
+
+        print(this_pt)
+
+        if this_loc_delta < 600:
+
+            ax.plot(this_pt[0],this_pt[1], 
+                    marker='D', 
+                    linestyle='none',
+                    markerfacecolor='lightgreen',
+                    markeredgecolor='black',
+                    markersize=18,
+                    zorder=30)
+
+            ax.annotate(this_time_dt.strftime("%H:%M:%S Z"), 
+                xy=(this_pt[0],this_pt[1]),
+                xytext=(this_pt[0]+0,this_pt[1]+0.1),
+                horizontalalignment=kwargs.pop('pixel_value_vertical_alignment', 'center'),
+                verticalalignment=kwargs.pop('pixel_value_vertical_alignment', 'center'), 
+                color=kwargs.pop('pixel_value_color', 'lightgreen'),
+                fontweight='bold',
+                clip_box=ax.bbox,
+                fontsize=kwargs.pop('pixel_value_fontsize', 18),
+                transform=crs.PlateCarree(),
+                annotation_clip=False, 
+                zorder=kwargs.pop('pixel_value_zorder', 30))
+
     if kwargs.get('save_to_kmz'):
 
-        file_name = sat_id + meso_str_file + "_" + sel_band_str + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
-        layer_name = sat_id.replace("G", "GOES-") + meso_str_title + " image at " + scan_end.strftime('%d %B %Y %H:%M UTC ')
+        file_name = sat_id + meso_str_file + "_" + sel_band_str + "_" + scan_start.strftime('%Y%m%d_%H%M%S%Z')
+        layer_name = sat_id.replace("G", "GOES-") + meso_str_title + " image at " + scan_start.strftime('%d %B %Y %H:%M:%S UTC ')
         layer_desc = IMPLEMENTED_BANDS[str(band)]
 
         if not os.path.exists(save_dir):
@@ -321,9 +363,9 @@ def plot_single_band_goes(file_path: str,
         title_info = orbital_slot.replace("-Test", "") + " (" + sat_id.replace("G", "GOES-") + ")" + meso_str_title + "\n" + IMPLEMENTED_BANDS[str(band)]
         
         ax.set_title(title_info, loc='left', fontweight='bold', fontsize=15)
-        ax.set_title('{}'.format(scan_end.strftime('%d %B %Y %H:%M UTC ')), loc='right')
+        ax.set_title('{}'.format(scan_start.strftime('%d %B %Y %H:%M:%S UTC ')), loc='right')
         
-        file_name = sat_id + meso_str_file + "_" + sel_band_str + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
+        file_name = sat_id + meso_str_file + "_" + sel_band_str + "_" + scan_start.strftime('%Y%m%d_%H%M%S%Z')
         
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
@@ -332,6 +374,8 @@ def plot_single_band_goes(file_path: str,
 
         fig.savefig(dest_path, bbox_inches="tight", dpi=kwargs.pop('file_dpi', DEFAULT_FILE_DPI))
         plt.close(fig)
+
+        return scan_start, scan_end
 
 def plot_composite_goes(file_path: str, 
                         save_dir: str,
@@ -423,10 +467,24 @@ def plot_composite_goes(file_path: str,
                     points,
                     **kwargs)
 
+    if kwargs.get('loc_points'):
+        loc_points = kwargs.get('loc_points')
+
+        this_loc_point = get_time_point(loc_points,
+                                        scan_start.strftime('%Y-%m-%d %H:%M:%S'))
+        
+        ax.plot(this_loc_point[1],this_loc_point[0], 
+                marker='*', 
+                linestyle='none',
+                markerfacecolor='red',
+                markeredgecolor='black',
+                markersize=10,
+                zorder=zorder)
+
     if kwargs.get('save_to_kmz'):
 
-        file_name = sat_id + meso_str_file + "_" + sel_band_str + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
-        layer_name = sat_id.replace("G", "GOES-") + " image at " + scan_end.strftime('%d %B %Y %H:%M UTC ')
+        file_name = sat_id + meso_str_file + "_" + sel_band_str + "_" + scan_start.strftime('%Y%m%d_%H%M%S%Z')
+        layer_name = sat_id.replace("G", "GOES-") + " image at " + scan_start.strftime('%d %B %Y %H:%M:%S UTC ')
         layer_desc = f'{human_product_name} Composite'
 
         if not os.path.exists(save_dir):
@@ -457,7 +515,7 @@ def plot_composite_goes(file_path: str,
         
         title_info = orbital_slot.replace("-Test", "") + " (" + sat_id.replace("G", "GOES-") + ")" + meso_str_title + "\n" + human_product_name + " Composite"
         ax.set_title(title_info, loc='left', fontweight='bold', fontsize=15)
-        ax.set_title('{}'.format(scan_end.strftime('%d %B %Y %H:%M:%S UTC ')), loc='right')
+        ax.set_title('{}'.format(scan_start.strftime('%d %B %Y %H:%M:%S UTC ')), loc='right')
         
         file_name = sat_id + meso_str_file + "_" + product + "_" + scan_end.strftime('%Y%m%d_%H%M%S%Z')
         
@@ -471,6 +529,8 @@ def plot_composite_goes(file_path: str,
                     dpi=kwargs.pop('file_dpi', DEFAULT_FILE_DPI))
 
         plt.close(fig)
+
+        return scan_start, scan_end
 
 def _calculate_pixel_lat_lon(proj_x, proj_y, proj_info):
 
@@ -786,6 +846,12 @@ if __name__ == "__main__":
                         metavar='file_path',
                         dest='points_file',
                         default=None)
+    parser.add_argument('--locations-from-file',
+                        help='specify a CSV file to read in points from. CSV file must have no header and be in format: lat,lon,marker,label',
+                        type=str,
+                        metavar='file_path',
+                        dest='loc_file',
+                        default=None)
     parser.add_argument('--settings-from-file',
                         help='specify a JSON file to read in plot settings from.',
                         type=str,
@@ -862,7 +928,21 @@ if __name__ == "__main__":
         except Exception as err:
             raise err
 
-    # print(points)
+    loc_points = []
+    if args.loc_file:
+        try:
+            with open(args.loc_file, newline='') as loccsv:
+                reader = csv.reader(loccsv, delimiter=',')
+                for row in reader:
+
+                    point = (row[0],
+                             float(row[1]),
+                             float(row[2]))
+                    loc_points += [point]
+        except Exception as err:
+            raise err
+
+    print(loc_points)
 
     if args.settings_file:
         if ('default' in args.settings_file) and ('/' not in args.settings_file):
@@ -884,24 +964,29 @@ if __name__ == "__main__":
     if args.show_colorbar:
         user_settings.update({'colorbar_visible': True})
 
+    if args.loc_file:
+        user_settings.update({'loc_points': loc_points})
+
 
     input_files = sorted(glob.glob(f'{input_dir}*.nc'))
     num_input_files = len(input_files)
 
     tot_files = 0
+    scan_idx = 1
+    scan_times = []
 
     with tqdm(miniters=0, total=len(input_files), desc=f'Plotting {product_desc}...', ascii=" ░▒▓█") as progress:
         for input_file_path in input_files:
 
             if plot_composite:
-                plot_composite_goes(input_file_path, 
+                scan_start, scan_end = plot_composite_goes(input_file_path, 
                                     save_dir, 
                                     points, 
                                     bbox, 
                                     args.composite, 
                                     **user_settings)
             else:
-                plot_single_band_goes(input_file_path, 
+                scan_start, scan_end = plot_single_band_goes(input_file_path, 
                                       save_dir, 
                                       args.band, 
                                       points, 
@@ -909,6 +994,11 @@ if __name__ == "__main__":
                                       pal, 
                                       **user_settings)
             progress.update()
+            scan_times.append((scan_idx, scan_start, scan_end))
+            scan_idx += 1
+
+        scan_df = pd.DataFrame(data=scan_times, columns=['idx', 'scan_start', 'scan_end'])
+        scan_df.to_csv(os.path.join(save_dir, f"ScanTimes.csv"), index=None)
 
     print("Done!")
 

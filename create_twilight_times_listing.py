@@ -114,6 +114,7 @@ if __name__ == "__main__":
                         dest='timezone',
                         type=str,
                         metavar=('tz'),
+                        choices=pytz.all_timezones,
                         default=None)
     parser.add_argument('--location', 
                         help='specify a point to take the listing data from', 

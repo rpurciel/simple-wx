@@ -5,6 +5,7 @@ from collections.abc import Callable
 from uuid import uuid4
 from glob import glob 
 import requests
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -237,6 +238,38 @@ def make_highly_visible(plt: mpl.figure.Figure,
     obj.set_path_effects([patheffects.withStroke(linewidth=outline_width, 
                                                  foreground=outline_color)])
 
+def get_time_point(points_lookup_table: dict[str, tuple[float, float]],
+                   current_time = str):
+
+    point_tds_list = []
+    current_time_pd = pd.Timestamp(current_time)
+
+    for point in points_lookup_table:
+        point_time = point[0]
+        point_lat = point[1]
+        point_lon = point[2]
+
+        point_time_pd = pd.Timestamp(datetime.strptime(point_time, "%Y-%m-%d %H:%M:%S"))
+        point_td = point_time_pd - current_time_pd
+
+        if point_td.seconds > 86400:
+            point_sec = abs(point_td.seconds - 86400)
+        else:
+            point_sec = abs(point_td.seconds)
+
+        point_tds_list.append((point_sec, (point_time, (point_lat, point_lon))))
+
+    point_tds_times = [item[0] for item in point_tds_list]
+
+    print(point_tds_times)
+
+    point_min_td = min(point_tds_times)
+    point_sel_min_td = [item for item in point_tds_list if item[0] == point_min_td]
+    print(point_sel_min_td)
+
+
+    return point_sel_min_td[0]
+
 def plot_points(plt: mpl.figure.Figure,
                 ax: mpl.axes.Axes | cartopy.mpl.geoaxes.GeoAxes, 
                 points: list[tuple[float, float, str, str, float, float], ...],
@@ -414,6 +447,7 @@ def draw_logo(ax: mpl.axes.Axes | cartopy.mpl.geoaxes.GeoAxes,
         None
     """
 
+    return None
     mpl.use('agg')
 
 

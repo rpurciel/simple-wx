@@ -227,6 +227,9 @@ if __name__ == "__main__":
     else:
         raise ValueError("Please specify either start/end time bounds or a 'time around' a specified time.")
 
+    # if args.format_for_uems:
+    uems_format = False
+
     keys = []
     file_names = []
     init_ts = None
@@ -244,18 +247,23 @@ if __name__ == "__main__":
 
             this_ts = time.to_timestamp()
 
-            if product == "goes":
-                protokey = f"ABI-L2-MCMIPM/{str(this_ts.year).zfill(4)}/{str(this_ts.day_of_year).zfill(3)}/{str(this_ts.hour).zfill(2)}/*"
+            if "goes" in product:
+                if "meso" in product:
+                    protokey = f"ABI-L2-MCMIPM/{str(this_ts.year).zfill(4)}/{str(this_ts.day_of_year).zfill(3)}/{str(this_ts.hour).zfill(2)}/*"
+                else:
+                    protokey = f"ABI-L2-MCMIPC/{str(this_ts.year).zfill(4)}/{str(this_ts.day_of_year).zfill(3)}/{str(this_ts.hour).zfill(2)}/*"
                 files = list_aws_keys(bucket, protokey, glob_match=True)
                 for file in files:
                     keys += [file]
                     file_names += [file[file.rfind('/')+1:]]
+
             elif product == "glm":
                 protokey = f"GLM-L2-LCFA/{str(this_ts.year).zfill(4)}/{str(this_ts.day_of_year).zfill(3)}/{str(this_ts.hour).zfill(2)}/*"
                 files = list_aws_keys(bucket, protokey, glob_match=True)
                 for file in files:
                     keys += [file]
                     file_names += [file[file.rfind('/')+1:]]
+
             elif product == "hw":
                 protokey = f"AHI-L1b-FLDK/{str(this_ts.year).zfill(4)}/{str(this_ts.month).zfill(2)}/{str(this_ts.day).zfill(2)}/{str(this_ts.hour).zfill(2)}{str(this_ts.minute).zfill(2)}/*"
                 files = list_aws_keys(bucket, protokey, glob_match=True)
@@ -270,7 +278,7 @@ if __name__ == "__main__":
                     file_id = "conus"
 
                 if "fcst" in product:
-                     protokey = f'hrrr.{str(init_ts.year).zfill(4)}{str(init_ts.month).zfill(2)}{str(init_ts.day).zfill(2)}/{file_id}/*wrfprsf*'
+                    protokey = f'hrrr.{str(init_ts.year).zfill(4)}{str(init_ts.month).zfill(2)}{str(init_ts.day).zfill(2)}/{file_id}/*wrfprsf*'
                 else:
                     protokey = f'hrrr.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}/{file_id}/*wrfprsf*'
 
@@ -290,7 +298,10 @@ if __name__ == "__main__":
                     if "fcst" in product:
                         if (file_hr == init_ts.hour) and (file_fcsthr == current_fcst_hr):
                             keys += [file]
-                            file_names += [file[file.rfind('/')+1:].replace("hrrr.",f"hrrr.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}.")]
+                            if uems_format:
+                                file_names += [file[file.rfind('/')+1:].replace("hrrr.",f"{str(this_ts.year)[2:].zfill(2)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}{str(file_hr).zfill(2)}.hrrr.")]
+                            else:
+                                file_names += [file[file.rfind('/')+1:].replace("hrrr.",f"hrrr.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}.")]
                             current_fcst_hr += 1
 
                             if current_fcst_hr == req_fcst_len:
@@ -299,7 +310,10 @@ if __name__ == "__main__":
                     else:
                         if (file_hr == this_ts.hour) and (file_fcsthr == 0):
                             keys += [file]
-                            file_names += [file[file.rfind('/')+1:].replace("hrrr.",f"hrrr.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}.")]
+                            if uems_format:
+                                file_names += [file[file.rfind('/')+1:].replace("hrrr.",f"{str(this_ts.year)[2:].zfill(2)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}{str(file_hr).zfill(2)}.hrrr.")]
+                            else:
+                                file_names += [file[file.rfind('/')+1:].replace("hrrr.",f"hrrr.{str(this_ts.year).zfill(4)}{str(this_ts.month).zfill(2)}{str(this_ts.day).zfill(2)}.")]
 
             elif "gfs" in product:
                 if "fcst" in product:
